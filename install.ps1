@@ -18,14 +18,38 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Source = $PSScriptRoot,
+    [string]$Source,
     [string]$TaskName = 'NotepadTidy'
 )
 
 $ErrorActionPreference = 'Stop'
 
+# $PSScriptRoot cannot be relied on in a param default: it is empty in some
+# Windows PowerShell 5.1 invocations, which made the script fail on an empty
+# -Path. Resolve it in the body, with fallbacks.
+if (-not $Source) {
+    $Source = if ($PSScriptRoot) { $PSScriptRoot }
+              elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path }
+              else { (Get-Location).Path }
+}
+Write-Host "Source: $Source"
+
+# Elevation is not needed, and is actively unhelpful: the scheduled task and
+# the notes both belong to the interactive user. Running as a different
+# administrator account would install for that account instead.
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+if (([Security.Principal.WindowsPrincipal]$identity).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Warning "Running elevated. Administrator rights are not required."
+    Write-Warning "Installing for '$($identity.Name)'. If that is not your usual account, close this and use a normal PowerShell window."
+}
+
 $dest = Join-Path $env:LOCALAPPDATA 'notepad-tidy\bin'
 $required = @('nptidy.exe', 'nptidyd.exe')
+
+# Files extracted from a downloaded archive carry a "blocked" mark that can
+# stop them running. Clearing it is harmless when it is absent.
+Get-ChildItem $Source -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
 
 foreach ($file in $required) {
     if (-not (Test-Path (Join-Path $Source $file))) {
