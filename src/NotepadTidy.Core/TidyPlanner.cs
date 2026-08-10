@@ -49,14 +49,19 @@ public static class TidyPlanner
             .Where(g => g.Value.Count > 1)
             .Select(g =>
             {
-                // The largest note becomes the container, so the bulk of the
-                // content never moves and the smaller notes are appended to it.
-                var container = g.Value.OrderByDescending(n => n.Text.Length)
-                                       .ThenBy(n => n.Id).First();
+                // Chronology decides, never size. The oldest note becomes the
+                // container and the others are appended from oldest to newest,
+                // so a theme reads as a history from top to bottom.
+                //
+                // Choosing the largest note instead would scramble the order on
+                // the very first run, which is exactly when a user has the most
+                // notes to merge and the least trust in the tool.
+                var ordered = g.Value.OrderBy(n => n.Created).ThenBy(n => n.Id).ToList();
+                var container = ordered[0];
                 return new TidyGroup(
                     g.Key,
                     container.Id,
-                    g.Value.Where(n => n.Id != container.Id).Select(n => n.Id).ToList(),
+                    ordered.Skip(1).Select(n => n.Id).ToList(),
                     container.Text.Length);
             })
             .OrderByDescending(g => g.Sources.Count)

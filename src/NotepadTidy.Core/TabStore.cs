@@ -32,7 +32,26 @@ public sealed class TabStore(TabPaths paths, ITabFileSystem fs)
         }
     }
 
-    public TabRecord Read(Guid id) => TabRecord.Parse(id, FileSystem.ReadAllBytes(Paths.TabFile(id)));
+    public TabRecord Read(Guid id)
+    {
+        var path = Paths.TabFile(id);
+        var record = TabRecord.Parse(id, FileSystem.ReadAllBytes(path));
+
+        // Creation time comes from the file system, not the format — Notepad
+        // stores no date inside a tab. It is what keeps merges chronological.
+        return new TabRecord
+        {
+            Id = record.Id,
+            Status = record.Status,
+            Text = record.Text,
+            CursorStart = record.CursorStart,
+            CursorEnd = record.CursorEnd,
+            DeclaredLength = record.DeclaredLength,
+            TextOffset = record.TextOffset,
+            FileLength = record.FileLength,
+            Created = FileSystem.GetCreationTime(path),
+        };
+    }
 
     /// <summary>
     /// Full copy of LocalState. Call this before any write: these notes exist
@@ -49,9 +68,12 @@ public sealed class TabStore(TabPaths paths, ITabFileSystem fs)
             FileSystem.CreateDirectory(target);
             foreach (var src in FileSystem.EnumerateFiles(directory, "*"))
             {
-                FileSystem.WriteAllBytes(
-                    Path.Combine(target, Path.GetFileName(src)),
-                    FileSystem.ReadAllBytes(src));
+                var copy = Path.Combine(target, Path.GetFileName(src));
+                FileSystem.WriteAllBytes(copy, FileSystem.ReadAllBytes(src));
+                // Carry the creation time over, otherwise a copy loses the
+                // chronology and a restored backup would merge in a different
+                // order than the original.
+                FileSystem.SetCreationTime(copy, FileSystem.GetCreationTime(src));
                 count++;
             }
         }

@@ -44,7 +44,12 @@ public static class ThemeMention
     {
         // Whole-token comparison, so "play" does not match inside "display".
         // Tokenisation also folds case and diacritics.
-        var tokens = CorpusProfile.Tokenize(note).ToList();
+        //
+        // Hyphens are kept inside words on purpose: a hyphen is how a user
+        // writes a compound theme, so "project-mail" is one token and must not
+        // register as a mention of "project". Splitting on the hyphen would
+        // quietly file a dedicated theme into its parent.
+        var tokens = CorpusProfile.Tokenize(note, keepHyphens: true).ToList();
         if (tokens.Count == 0) return ThemeMatch.None("empty note");
 
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

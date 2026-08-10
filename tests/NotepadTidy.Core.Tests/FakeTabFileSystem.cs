@@ -38,6 +38,14 @@ public sealed class FakeTabFileSystem : ITabFileSystem
             .Equals(directory.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) == true);
 
     public void CreateDirectory(string path) { }
+
+    private readonly Dictionary<string, DateTime> _created = new(StringComparer.OrdinalIgnoreCase);
+
+    public void SetCreationTime(string path, DateTime when) => _created[path] = when;
+
+
+    public DateTime GetCreationTime(string path)
+        => _created.TryGetValue(path, out var t) ? t : DateTime.MinValue;
 }
 
 public sealed class FakeNotepadGuard : INotepadGuard

@@ -27,6 +27,10 @@ public sealed class WindowsTabFileSystem : ITabFileSystem
         => Directory.EnumerateFiles(directory, pattern);
 
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+
+    public DateTime GetCreationTime(string path) => File.GetCreationTime(path);
+
+    public void SetCreationTime(string path, DateTime when) => File.SetCreationTime(path, when);
 }
 
 public sealed class NotepadProcessGuard : INotepadGuard

@@ -69,13 +69,17 @@ public sealed class CorpusProfile
     /// Splits on Unicode category boundaries, assuming no particular alphabet.
     /// Digits are kept: "v2" and "http2" carry meaning.
     /// </summary>
-    public static IEnumerable<string> Tokenize(string text)
+    public static IEnumerable<string> Tokenize(string text, bool keepHyphens = false)
     {
         var buffer = new StringBuilder();
         foreach (var rune in text.EnumerateRunes())
         {
-            if (Rune.IsLetterOrDigit(rune)) buffer.Append(rune.ToString());
-            else if (buffer.Length > 0) { if (buffer.Length >= 2) yield return Normalize(buffer.ToString()); buffer.Clear(); }
+            // A hyphen only stays inside a word, never at its edges — that is
+            // what makes "project-mail" one token and a dash on its own line
+            // still a separator.
+            bool joins = keepHyphens && rune.Value == '-' && buffer.Length > 0;
+            if (Rune.IsLetterOrDigit(rune) || joins) buffer.Append(rune.ToString());
+            else if (buffer.Length > 0) { if (buffer.Length >= 2) yield return Normalize(buffer.ToString().Trim('-')); buffer.Clear(); }
         }
         if (buffer.Length >= 2) yield return Normalize(buffer.ToString());
     }

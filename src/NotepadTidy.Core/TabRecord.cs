@@ -37,6 +37,9 @@ public sealed class TabRecord
     public int TextOffset { get; init; }
     public int FileLength { get; init; }
 
+    /// <summary>When the tab was created. Merges are ordered by this, never by size.</summary>
+    public DateTime Created { get; init; }
+
     /// <summary>True when this file can be rewritten without risking data loss.</summary>
     public bool IsSafeToRewrite => Status == TabStatus.Ok;
 

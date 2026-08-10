@@ -77,8 +77,12 @@ public static class ThemeVocabulary
                 int limit = Math.Min(MaxThemeLength, head.Length);
                 for (int length = MinThemeLength; length <= limit; length++)
                 {
-                    var prefix = head[..length];
-                    counts[prefix] = counts.GetValueOrDefault(prefix) + 1;
+                    // A theme never ends on whitespace. Without this, "project "
+                    // outscores "project" — it is one character longer for the
+                    // same note count — and every theme ends up padded.
+                    if (char.IsWhiteSpace(head[length - 1])) continue;
+
+                    counts[head[..length]] = counts.GetValueOrDefault(head[..length]) + 1;
                 }
             }
 

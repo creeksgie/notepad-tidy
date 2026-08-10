@@ -97,6 +97,18 @@ public class ThemeMentionTests
         Assert.Null(match.Theme);
     }
 
+    /// <summary>
+    /// A hyphen is how a user writes a compound theme, so "project-mail" is one
+    /// token and must not register as a mention of "project". Splitting on the
+    /// hyphen would quietly file a dedicated theme into its parent.
+    /// </summary>
+    [Fact]
+    public void FindInBody_DoesNotSeeAHyphenatedCompoundAsItsParent()
+    {
+        Assert.False(ThemeMention.FindInBody("the project-mail address list", Vocabulary).Found);
+        Assert.Equal("project", ThemeMention.FindInBody("the project mail address", Vocabulary).Theme);
+    }
+
     [Fact]
     public void FindInBody_HandlesEmptyInput()
     {

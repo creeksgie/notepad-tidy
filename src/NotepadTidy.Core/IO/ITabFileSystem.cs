@@ -13,6 +13,12 @@ public interface ITabFileSystem
     void DeleteFile(string path);
     IEnumerable<string> EnumerateFiles(string directory, string pattern);
     void CreateDirectory(string path);
+
+    /// <summary>When the tab was first created, used to keep merges chronological.</summary>
+    DateTime GetCreationTime(string path);
+
+    /// <summary>Preserves creation time when copying, so backups stay faithful.</summary>
+    void SetCreationTime(string path, DateTime when);
 }
 
 /// <summary>
