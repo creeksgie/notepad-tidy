@@ -56,6 +56,32 @@ public static class NoteHeading
         return null;
     }
 
+    /// <summary>
+    /// Removes the heading line from a note's text, leaving the body.
+    ///
+    /// Used on absorbed notes: once merged, the separator above them already
+    /// carries the theme and the date, so repeating "#theme" on every chunk is
+    /// noise. The container keeps its own heading — it is what names the tab.
+    /// </summary>
+    public static string StripHeading(string text)
+    {
+        var lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (trimmed.Length == 0) continue;
+
+            // Not a heading: the note has none, leave the text untouched.
+            if (trimmed.Length < 2 || trimmed[0] != Marker) return text;
+
+            // Drop the heading line, then the blank lines that followed it.
+            int start = i + 1;
+            while (start < lines.Length && lines[start].Trim().Length == 0) start++;
+            return string.Join('\n', lines.Skip(start));
+        }
+        return text;
+    }
+
     /// <summary>The first non-empty, trimmed lines of a note.</summary>
     public static IEnumerable<string> FirstNonEmptyLines(string note, int depth)
     {

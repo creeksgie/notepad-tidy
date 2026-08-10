@@ -37,7 +37,16 @@ public sealed class TabMerger(TabStore store, INotepadGuard guard)
 {
     public static TabMerger Default() => new(TabStore.Default(), new NotepadProcessGuard());
 
-    public MergeResult Merge(Guid container, IReadOnlyList<Guid> sources, string separator)
+    /// <param name="stripSourceHeadings">
+    /// Drop the "#theme" line from absorbed notes. The separator above each
+    /// chunk already carries the theme and the date, so repeating the heading
+    /// is noise. The container keeps its own — it is what names the tab.
+    /// </param>
+    public MergeResult Merge(
+        Guid container,
+        IReadOnlyList<Guid> sources,
+        string separator,
+        bool stripSourceHeadings = true)
     {
         if (guard.IsRunning)
             return MergeResult.Refused(MergeRefusal.NotepadRunning,
@@ -61,7 +70,7 @@ public sealed class TabMerger(TabStore store, INotepadGuard guard)
                 return MergeResult.Refused(MergeRefusal.SourceUnreadable,
                     $"Source {id} is not readable: {record.Status}");
 
-            texts.Add(record.Text);
+            texts.Add(stripSourceHeadings ? NoteHeading.StripHeading(record.Text) : record.Text);
             absorbed.Add(id);
         }
 
