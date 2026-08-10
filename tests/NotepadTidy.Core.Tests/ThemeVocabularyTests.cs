@@ -90,12 +90,60 @@ public class ThemeVocabularyTests
     [Fact]
     public void Discover_IgnoresThemesUsedOnlyOnce()
     {
-        string[] notes = ["#projectone", "#projecttwo", "#singleton unique"];
+        string[] notes = ["#projectone thing", "#projecttwo thing", "#loner alone once"];
 
         var themes = ThemeVocabulary.Discover(notes);
 
         Assert.Contains("project", themes);
-        Assert.DoesNotContain(themes, t => t.StartsWith("singleton", StringComparison.Ordinal));
+        // A glued heading seen once is not enough to declare a theme.
+        Assert.DoesNotContain(themes, t => t.StartsWith("loner", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A clean heading is an explicit statement of intent and must beat the
+    /// statistics. "#project-mail" is a deliberate compound theme, even though
+    /// it starts with "project" and is used only once — prefix matching alone
+    /// would silently swallow it into the wrong theme.
+    /// </summary>
+    [Fact]
+    public void CleanHeading_BeatsPrefixMatching_ForCompoundThemes()
+    {
+        string[] notes =
+        [
+            "#projectcreate table", "#projectuser list", "#projectweb security",
+            "#project-mail\r\n\r\nlong list of addresses",
+        ];
+
+        var themes = ThemeVocabulary.Discover(notes);
+
+        Assert.Contains("project", themes);
+        Assert.Contains("project-mail", themes);
+        Assert.Equal("project-mail",
+            ThemeVocabulary.Match("#project-mail\r\n\r\nlong list", themes));
+    }
+
+    [Fact]
+    public void CleanHeading_RequiresASingleShortToken()
+    {
+        // A name, not a sentence.
+        Assert.Equal("project-mail", ThemeVocabulary.CleanHeading("#project-mail\r\nbody"));
+        Assert.Null(ThemeVocabulary.CleanHeading("#project mail\r\nbody"));
+        Assert.Null(ThemeVocabulary.CleanHeading("#" + new string('x', 40) + "\r\nbody"));
+        Assert.Null(ThemeVocabulary.CleanHeading("no marker\r\nbody"));
+    }
+
+    /// <summary>
+    /// Real notes often begin with residue — a pasted HTML entity, a stray
+    /// fragment — with the heading a couple of lines below. Reading only the
+    /// first non-empty line misses it.
+    /// </summary>
+    [Fact]
+    public void RawHeadingLine_FindsAHeadingBelowLeadingResidue()
+    {
+        const string note = "&#x20;  \r\n\r\n\r\n#project-mail\r\n\r\naddresses";
+
+        Assert.Equal("project-mail", ThemeVocabulary.RawHeadingLine(note));
+        Assert.Equal("project-mail", NoteHeading.ExtractExplicit(note));
     }
 
     [Fact]
@@ -105,7 +153,7 @@ public class ThemeVocabularyTests
 
         Assert.Equal("project", ThemeVocabulary.Match("#Project test\r\nbody", vocabulary));
         Assert.Equal("project", ThemeVocabulary.Match("#PROJECT other\r\nbody", vocabulary));
-        Assert.Equal("project", ThemeVocabulary.Match("#projectglued\r\nbody", vocabulary));
+        Assert.Equal("project", ThemeVocabulary.Match("#projectglued content\r\nbody", vocabulary));
     }
 
     [Fact]
@@ -124,7 +172,7 @@ public class ThemeVocabularyTests
     [Fact]
     public void Discover_ToleratesNotesWithoutMarker()
     {
-        string[] notes = ["#projectone", "#projecttwo", "note without marker", ""];
+        string[] notes = ["#projectone thing", "#projecttwo thing", "note without marker", ""];
 
         var themes = ThemeVocabulary.Discover(notes);
 

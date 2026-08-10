@@ -33,13 +33,41 @@ public static class NoteHeading
     /// port numbers, schedules, passwords. An explicit marker removes the
     /// ambiguity entirely for the cost of one character.</para>
     /// </summary>
+    /// <summary>
+    /// How many non-empty lines are scanned when looking for the marker.
+    ///
+    /// Looking only at the very first line is not enough: real notes often
+    /// start with residue — a pasted HTML entity, a stray character, a leftover
+    /// fragment — with the heading a couple of lines below. Scanning a few
+    /// lines costs nothing and rescues those notes; scanning the whole note
+    /// would start matching '#' inside the content.
+    /// </summary>
+    public const int HeadingSearchDepth = 4;
+
     public static string? ExtractExplicit(string note)
     {
-        var line = FirstNonEmptyLine(note)?.Trim();
-        if (line is null || line.Length < 2 || line[0] != Marker) return null;
+        foreach (var line in FirstNonEmptyLines(note, HeadingSearchDepth))
+        {
+            if (line.Length < 2 || line[0] != Marker) continue;
 
-        var heading = line[1..].Trim();
-        return heading.Length > 0 && heading.Length <= MaxLength ? heading : null;
+            var heading = line[1..].Trim();
+            if (heading.Length > 0 && heading.Length <= MaxLength) return heading;
+        }
+        return null;
+    }
+
+    /// <summary>The first non-empty, trimmed lines of a note.</summary>
+    public static IEnumerable<string> FirstNonEmptyLines(string note, int depth)
+    {
+        int seen = 0;
+        // Lone '\r' included: Notepad does not always write CRLF pairs.
+        foreach (var line in note.Split('\r', '\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0) continue;
+            yield return trimmed;
+            if (++seen >= depth) yield break;
+        }
     }
 
     /// <summary>

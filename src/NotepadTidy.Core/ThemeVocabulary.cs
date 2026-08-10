@@ -35,17 +35,13 @@ public static class ThemeVocabulary
     /// </summary>
     public static string? RawHeadingLine(string note)
     {
-        // Splitting on '\n' alone is not enough: Notepad also writes lone '\r'
-        // characters. Without this, the whole note is treated as a single line
-        // and the extracted "theme" swallows the entire content.
-        foreach (var line in note.Split('\r', '\n'))
-        {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0) continue;
-            return trimmed.Length >= 2 && trimmed[0] == NoteHeading.Marker
-                ? trimmed[1..].TrimStart()
-                : null;
-        }
+        // The marker is not always on the very first line: notes often begin
+        // with residue — a pasted HTML entity, a leftover fragment — and the
+        // heading sits a couple of lines below.
+        foreach (var line in NoteHeading.FirstNonEmptyLines(note, NoteHeading.HeadingSearchDepth))
+            if (line.Length >= 2 && line[0] == NoteHeading.Marker)
+                return line[1..].TrimStart();
+
         return null;
     }
 
@@ -62,8 +58,16 @@ public static class ThemeVocabulary
                          .Select(h => h!.ToLowerInvariant())
                          .ToList();
 
-        var themes = new List<string>();
-        var remaining = new List<string>(heads);
+        // Clean headings are themes by declaration, whatever their frequency.
+        // Requiring two occurrences would drop a compound name used once.
+        var themes = notes.Select(n => CleanHeading(n))
+                          .Where(t => t is not null)
+                          .Distinct(StringComparer.OrdinalIgnoreCase)
+                          .Select(t => t!)
+                          .ToList();
+
+        var remaining = heads.Where(h => !themes.Any(
+            t => h.StartsWith(t, StringComparison.OrdinalIgnoreCase))).ToList();
 
         while (remaining.Count > 0)
         {
@@ -106,11 +110,42 @@ public static class ThemeVocabulary
     }
 
     /// <summary>
+    /// A heading that needs no statistics: a single whitespace-delimited token,
+    /// short enough to be a name rather than a sentence.
+    ///
+    /// <para>This takes precedence over prefix matching, and that ordering
+    /// matters. "#project-mail" is a deliberate compound theme — the hyphen is
+    /// how a user writes a multi-word name — but it also starts with "project",
+    /// so prefix matching would silently swallow it into the wrong theme. A
+    /// clean heading is an explicit statement of intent and must win.</para>
+    ///
+    /// <para>Glued headings ("#projectHi there!") are longer than a name and
+    /// fall through to prefix discovery, which is what they need.</para>
+    /// </summary>
+    public static string? CleanHeading(string note, int maxLength = 30)
+    {
+        var head = RawHeadingLine(note);
+        if (head is null) return null;
+
+        var trimmed = head.Trim();
+        if (trimmed.Length == 0 || trimmed.Length > maxLength) return null;
+
+        // A single token: no internal whitespace. Hyphens are part of the name.
+        foreach (var c in trimmed) if (char.IsWhiteSpace(c)) return null;
+
+        return trimmed.ToLowerInvariant();
+    }
+
+    /// <summary>
     /// Theme of a note, taken from a known vocabulary. The longest matching
     /// prefix wins, so "projectx" beats "project".
     /// </summary>
     public static string? Match(string note, IEnumerable<string> vocabulary)
     {
+        // An explicit, clean heading always wins over statistics.
+        var clean = CleanHeading(note);
+        if (clean is not null) return clean;
+
         var head = RawHeadingLine(note)?.ToLowerInvariant();
         if (head is null) return null;
 
