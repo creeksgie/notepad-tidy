@@ -23,15 +23,15 @@ public readonly record struct MergeResult(
 }
 
 /// <summary>
-/// Fusionne des notes dans un onglet conteneur, puis supprime les notes
-/// absorbées.
+/// Merges notes into a container tab, then deletes the absorbed notes.
 ///
-/// Le conteneur est un onglet <b>existant</b> : son GUID est déjà indexé dans
-/// le WindowState, ce qui évite d'avoir à toucher à ce fichier — dont le
-/// checksum n'est pas résolu. Voir docs/FORMAT.md §7.
+/// <para>The container is an <b>existing</b> tab: its GUID is already listed in
+/// WindowState, which avoids having to touch that file — whose checksum has not
+/// been reverse engineered. See docs/FORMAT.md §7.</para>
 ///
-/// C'est le seul endroit du projet qui détruit des données. Toutes ses
-/// dépendances sont injectées pour qu'il soit intégralement testable.
+/// <para>This is the only place in the project that destroys data. All of its
+/// dependencies are injected so that it can be tested end to end without ever
+/// touching a real TabState folder.</para>
 /// </summary>
 public sealed class TabMerger(TabStore store, INotepadGuard guard)
 {
@@ -41,12 +41,12 @@ public sealed class TabMerger(TabStore store, INotepadGuard guard)
     {
         if (guard.IsRunning)
             return MergeResult.Refused(MergeRefusal.NotepadRunning,
-                "Notepad tourne — il écraserait l'écriture.");
+                "Notepad is running — it would overwrite the write.");
 
         var containerRecord = store.Read(container);
         if (!containerRecord.IsSafeToRewrite)
             return MergeResult.Refused(MergeRefusal.ContainerUnreadable,
-                $"Conteneur non réécrivable : {containerRecord.Status}");
+                $"Container is not safe to rewrite: {containerRecord.Status}");
 
         var texts = new List<string>();
         var absorbed = new List<Guid>();
@@ -55,41 +55,41 @@ public sealed class TabMerger(TabStore store, INotepadGuard guard)
             if (!store.FileSystem.FileExists(store.Paths.TabFile(id))) continue;
 
             var record = store.Read(id);
-            // Refus en bloc plutôt qu'absorption partielle : un fichier mal
-            // compris est une note qu'on risque de perdre.
+            // Refuse as a whole rather than absorb part of the batch: a file we
+            // misread is a note we risk losing.
             if (!record.IsSafeToRewrite)
                 return MergeResult.Refused(MergeRefusal.SourceUnreadable,
-                    $"Source {id} non lisible : {record.Status}");
+                    $"Source {id} is not readable: {record.Status}");
 
             texts.Add(record.Text);
             absorbed.Add(id);
         }
 
         if (absorbed.Count == 0)
-            return MergeResult.Refused(MergeRefusal.NoUsableSource, "Aucune source exploitable.");
+            return MergeResult.Refused(MergeRefusal.NoUsableSource, "No usable source.");
 
         var merged = containerRecord.Text + separator + string.Join(separator, texts);
         var bytes = TabRecord.Build(merged);
 
-        // Le writer relit son propre produit avant de l'écrire. S'il se trompe,
-        // on le découvre sur une copie mémoire, jamais sur les données réelles.
+        // The writer re-reads its own output before writing it. If it is wrong,
+        // we find out on an in-memory copy, never on real data.
         var verification = TabRecord.Parse(container, bytes);
         if (verification.Status != TabStatus.Ok || verification.Text != merged)
             return MergeResult.Refused(MergeRefusal.WriterSelfCheckFailed,
-                "Auto-vérification du writer échouée — rien écrit.");
+                "Writer self-check failed — nothing written.");
 
-        // Second contrôle : Notepad a pu redémarrer pendant qu'on travaillait.
+        // Second check: Notepad may have restarted while we were working.
         if (guard.IsRunning)
             return MergeResult.Refused(MergeRefusal.NotepadRunning,
-                "Notepad est revenu pendant l'opération.");
+                "Notepad came back during the operation.");
 
         store.FileSystem.WriteAllBytes(store.Paths.TabFile(container), bytes);
 
         foreach (var id in absorbed)
             store.FileSystem.DeleteFile(store.Paths.TabFile(id));
 
-        // Les enregistrements d'état du conteneur annoncent l'ancienne longueur
-        // et contrediraient le nouveau contenu. Notepad les recrée.
+        // The container's state records still announce the old length and would
+        // contradict the new content. Notepad recreates them.
         foreach (var path in store.Paths.StateRecordFiles(container))
             if (store.FileSystem.FileExists(path))
                 store.FileSystem.DeleteFile(path);

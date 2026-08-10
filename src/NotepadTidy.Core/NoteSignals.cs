@@ -3,21 +3,20 @@ using System.Text.RegularExpressions;
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// Signaux déterministes extractibles d'une note, sans modèle et sans réseau.
+/// Deterministic signals extractable from a note, with no model and no network.
 ///
-/// <para><b>Portée — à lire avant de s'en servir.</b> Une partie de ces
-/// signaux est spécifique au français et à l'alphabet latin : les salutations,
-/// les formules de politesse, et surtout <see cref="ProperNouns"/>, qui
-/// suppose qu'un nom commun n'est pas capitalisé en milieu de phrase — faux en
-/// allemand, sans objet en japonais ou en arabe.</para>
+/// <para><b>Scope — read this before relying on it.</b> Several of these signals
+/// are specific to French and to the Latin script: the greetings, the politeness
+/// formulas, and above all <see cref="ProperNouns"/>, which assumes a common
+/// noun is not capitalised mid-sentence — false in German, meaningless in
+/// Japanese or Arabic.</para>
 ///
-/// <para>Ce sont donc des <b>compléments optionnels</b>, pas le socle du
-/// classement. Le socle, c'est <see cref="CorpusProfile"/>, qui ne dépend
-/// d'aucune langue parce qu'il déduit tout de la distribution des données.
-/// Les seuls signaux réellement universels ici sont les URL et les domaines.
-/// </para>
+/// <para>They are therefore <b>optional complements</b>, not the backbone of
+/// filing. The backbone is <see cref="CorpusProfile"/>, which depends on no
+/// language because it derives everything from the distribution of the data.
+/// The only genuinely universal signals here are URLs and domains.</para>
 ///
-/// Tout est en fonctions pures : testable sans disque ni Notepad.
+/// Everything is a pure function: testable without disk or Notepad.
 /// </summary>
 public static partial class NoteSignals
 {
@@ -35,22 +34,19 @@ public static partial class NoteSignals
     [GeneratedRegex(@"(\bnpm\b|\bdocker\b|\bsudo\b|\bgit\b|\bapt\b|\bSELECT\b|\bfunction\b|\bconst\b|\bimport\b|=>|\{|\}|\$\w+|\bpsql\b|\bsystemctl\b)")]
     private static partial Regex TechnicalRegex { get; }
 
-    [GeneratedRegex(@"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9_-]{3,}")]
-    private static partial Regex TokenRegex { get; }
-
     /// <summary>
-    /// Mot capitalisé qui n'ouvre pas une phrase. En français, un nom commun
-    /// n'est pas capitalisé en milieu de phrase : ce filtre isole donc les
-    /// noms propres — projets, personnes, produits — sans aucun modèle.
+    /// A capitalised word that does not open a sentence. In French a common noun
+    /// is not capitalised mid-sentence, so this isolates proper nouns —
+    /// projects, people, products — with no model at all.
     /// </summary>
     [GeneratedRegex(@"(?<![.!?\r\n]\s{0,4}|^\s{0,4})\b\p{Lu}[\p{Ll}\p{Lu}0-9_-]{2,}\b",
         RegexOptions.Multiline)]
     private static partial Regex ProperNounRegex { get; }
 
-    /// <summary>Une salutation en tête trahit un brouillon de message.</summary>
+    /// <summary>An opening greeting betrays a message draft.</summary>
     public static bool LooksLikeMessageDraft(string text) => GreetingRegex.IsMatch(text);
 
-    /// <summary>Formule de politesse ou adresse mail : registre épistolaire.</summary>
+    /// <summary>Politeness formula or e-mail address: correspondence register.</summary>
     public static bool HasEpistolaryMarker(string text) => EpistolaryRegex.IsMatch(text)
         || text.Contains('@', StringComparison.Ordinal);
 
@@ -65,8 +61,8 @@ public static partial class NoteSignals
     public static int UrlCount(string text) => UrlRegex.Matches(text).Count;
 
     /// <summary>
-    /// Une note faite presque uniquement de liens : la similarité sémantique
-    /// n'a presque rien à mordre dessus, il lui faut un traitement séparé.
+    /// A note made almost entirely of links: semantic similarity has nearly
+    /// nothing to bite on, so it needs separate handling.
     /// </summary>
     public static bool IsMostlyLinks(string text)
     {
@@ -76,14 +72,10 @@ public static partial class NoteSignals
         return nonUrlChars < text.Length / 3;
     }
 
-    // Une liste de mots vides écrite à la main est toujours incomplète et ne
-    // vaut que pour une langue. Elle a été supprimée au profit de
-    // CorpusProfile, qui déduit les mots vides de la distribution réelle.
-
     /// <summary>
-    /// Noms propres candidats. C'est le signal le plus discriminant du corpus
-    /// pour identifier un projet ou un interlocuteur — bien plus que la
-    /// fréquence brute des mots, noyée par le vocabulaire courant.
+    /// Candidate proper nouns. The most discriminating subject signal in a
+    /// Latin-script corpus — far more so than raw word frequency, which drowns
+    /// in everyday vocabulary.
     /// </summary>
     public static IEnumerable<string> ProperNouns(string text)
     {
@@ -94,7 +86,7 @@ public static partial class NoteSignals
         }
     }
 
-    /// <summary>Capitalisés fréquents qui ne désignent ni projet ni personne.</summary>
+    /// <summary>Frequent capitalised words that name neither a project nor a person.</summary>
     private static readonly HashSet<string> ProperNounNoise = new(StringComparer.OrdinalIgnoreCase)
     {
         "Bonjour","Salut","Coucou","Bonsoir","Merci","Cordialement","Hello",
@@ -103,4 +95,7 @@ public static partial class NoteSignals
         "Octobre","Novembre","Décembre","Https","Http",
     };
 
+    // A handwritten stop-word list is always incomplete and only ever valid for
+    // one language. It was removed in favour of CorpusProfile, which derives
+    // stop words from the actual distribution.
 }

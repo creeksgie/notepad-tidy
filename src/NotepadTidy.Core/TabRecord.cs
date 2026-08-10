@@ -4,27 +4,27 @@ namespace NotepadTidy.Core;
 
 public enum TabStatus
 {
-    /// <summary>Parsé, layout vérifié, CRC valide. Seul état où l'écriture est permise.</summary>
+    /// <summary>Parsed, layout verified, CRC valid. The only state where writing is allowed.</summary>
     Ok,
-    /// <summary>Magic "NP" absent — ce n'est pas un fichier TabState.</summary>
+    /// <summary>No "NP" magic — this is not a TabState file.</summary>
     BadMagic,
-    /// <summary>Onglet lié à un vrai fichier (flag=01). À ne jamais modifier.</summary>
+    /// <summary>Tab backed by a real file (flag=01). Must never be modified.</summary>
     FileBacked,
-    /// <summary>Taille calculée ≠ taille réelle : variante de format non gérée.</summary>
+    /// <summary>Computed size ≠ actual size: unhandled format variant.</summary>
     LayoutMismatch,
-    /// <summary>CRC stocké ≠ CRC calculé. Fichier corrompu ou format modifié.</summary>
+    /// <summary>Stored CRC ≠ computed CRC. Corrupted file, or changed format.</summary>
     BadCrc,
-    /// <summary>Fichier trop court pour contenir un en-tête.</summary>
+    /// <summary>File too short to hold a header.</summary>
     TooShort,
     /// <summary>
-    /// En-tête d'une variante inconnue — probablement une mise à jour de
-    /// Notepad. On refuse plutôt que de parser à l'aveugle.
+    /// Header of an unknown variant — most likely a Notepad update. We refuse
+    /// rather than parse blindly.
     /// </summary>
     UnknownVariant,
 }
 
 /// <summary>
-/// Un onglet Notepad. Voir docs/FORMAT.md §4 pour le layout.
+/// A Notepad tab. See docs/FORMAT.md §4 for the layout.
 /// </summary>
 public sealed class TabRecord
 {
@@ -37,22 +37,22 @@ public sealed class TabRecord
     public int TextOffset { get; init; }
     public int FileLength { get; init; }
 
-    /// <summary>Vrai si on peut réécrire ce fichier sans risque de perte.</summary>
+    /// <summary>True when this file can be rewritten without risking data loss.</summary>
     public bool IsSafeToRewrite => Status == TabStatus.Ok;
 
     private const byte FlagUnsaved = 0x00;
 
     /// <summary>
-    /// Octet 4 de l'en-tête. Constant sur les 106 onglets du corpus de
-    /// référence. Sert de sentinelle de version : tout autre valeur fait
-    /// basculer le fichier en <see cref="TabStatus.UnknownVariant"/>.
+    /// Header byte 4. Constant across the 106 tabs of the reference corpus. Used
+    /// as a version sentinel: any other value sends the file to
+    /// <see cref="TabStatus.UnknownVariant"/>.
     /// </summary>
     private const byte KnownVariantMarker = 0x01;
 
     /// <summary>
-    /// Compteur du bloc de config émis par <see cref="Build"/>. La valeur 03
-    /// est celle que Notepad a acceptée en conditions réelles ; le parseur
-    /// accepte aussi 02, présent sur 17 % du corpus.
+    /// Config-block counter emitted by <see cref="Build"/>. The value 03 is the
+    /// one Notepad accepted in real conditions; the parser also accepts 02,
+    /// which occurs in 17% of the reference corpus.
     /// </summary>
     private const byte WrittenExtraCount = 0x03;
 
@@ -64,14 +64,14 @@ public sealed class TabRecord
         if (file[0] != 0x4E || file[1] != 0x50)
             return new TabRecord { Id = id, Status = TabStatus.BadMagic, FileLength = file.Length };
 
-        // Octet 3 : 00 = note volante, 01 = onglet adossé à un fichier réel.
+        // Byte 3: 00 = unsaved note, 01 = tab backed by a real file.
         if (file[3] != FlagUnsaved)
             return new TabRecord { Id = id, Status = TabStatus.FileBacked, FileLength = file.Length };
 
-        // Garde-fou anti-dérive de format. L'octet 4 vaut 01 sur la totalité du
-        // corpus de référence et sa signification reste inconnue. Si une mise à
-        // jour de Notepad le change, on veut un refus franc plutôt qu'un
-        // parsing silencieusement décalé qui détruirait des notes.
+        // Guard against format drift. Byte 4 is 01 across the whole reference
+        // corpus and its meaning is unknown. Should a Notepad update change it,
+        // we want a clean refusal rather than a silently shifted parse that
+        // would destroy notes.
         if (file[4] != KnownVariantMarker)
             return new TabRecord { Id = id, Status = TabStatus.UnknownVariant, FileLength = file.Length };
 
@@ -79,18 +79,17 @@ public sealed class TabRecord
         int cursorStart = ReadVarint(file, ref i);
         int cursorEnd = ReadVarint(file, ref i);
 
-        // Bloc de config : "01 00 00" puis un COMPTEUR, puis autant d'octets.
-        // Ce n'est pas un bloc de taille fixe — le supposer décale d'un octet
-        // sur les variantes à compteur 02, qui représentent 17 % du corpus.
-        i += 3;                                 // 01 00 00
+        // Config block: "01 00 00", then a COUNTER, then that many bytes.
+        // It is not a fixed-size block — assuming so shifts everything by one
+        // byte on counter-02 variants, which are 17% of the corpus.
+        i += 3;
         int extraCount = file[i++];
         i += extraCount;
 
         int declared = ReadVarint(file, ref i);
         int textOffset = i;
 
-        // Le layout doit tomber juste à l'octet près : en-tête + texte + marqueur + CRC.
-        // 17 des 100 notes du corpus de référence échouent ici (variante inconnue).
+        // The layout must add up to the byte: header + text + marker + CRC.
         int expected = textOffset + declared * 2 + 5;
         if (expected != file.Length)
         {
@@ -124,44 +123,44 @@ public sealed class TabRecord
     }
 
     /// <summary>
-    /// Fabrique un fichier d'onglet complet. Notepad ne fait aucune différence
-    /// avec un fichier qu'il aurait produit lui-même (vérifié le 2026-08-10).
+    /// Builds a complete tab file. Notepad makes no distinction between this and
+    /// a file it produced itself (verified in real conditions).
     /// </summary>
     public static byte[] Build(string text)
     {
-        // Longueur en unités de code UTF-16, ce qui est exactement string.Length.
+        // Length in UTF-16 code units, which is exactly string.Length.
         int n = text.Length;
 
         var body = new List<byte>(18 + n * 2 + 1)
         {
             0x4E, 0x50,             // "NP"
-            0x00,                   // séquence
-            FlagUnsaved,            // note volante
+            0x00,                   // sequence
+            FlagUnsaved,            // unsaved note
             KnownVariantMarker,
         };
 
-        WriteVarint(body, n);       // curseur début — placé en fin de texte
-        WriteVarint(body, n);       // curseur fin
+        WriteVarint(body, n);       // caret start — placed at the end of the text
+        WriteVarint(body, n);       // caret end
 
-        // Bloc à compteur. On émet systématiquement la variante 03, celle que
-        // Notepad a acceptée en conditions réelles. Le parseur, lui, lit le
-        // compteur et accepte les deux.
+        // Counter block. We always emit the 03 variant, the one Notepad accepted
+        // in real conditions. The parser reads the counter and accepts both.
         body.AddRange([0x01, 0x00, 0x00, WrittenExtraCount]);
         for (int k = 0; k < WrittenExtraCount; k++) body.Add(0x01);
 
-        WriteVarint(body, n);       // longueur du contenu
+        WriteVarint(body, n);       // content length
         body.AddRange(Encoding.Unicode.GetBytes(text));
-        body.Add(0x01);         // marqueur
+        body.Add(0x01);             // marker
 
         var result = new byte[body.Count + 4];
         body.CopyTo(result);
-        // Le CRC couvre [3 .. fin du marqueur], soit tout le corps sauf les 3 premiers octets.
+        // The CRC covers [3 .. end of marker], i.e. the whole body minus the
+        // first three bytes.
         Crc32.WriteBigEndian(result.AsSpan(body.Count), Crc32.Compute(result.AsSpan(3, body.Count - 3)));
         return result;
     }
 
-    // LEB128 non signé. Attention : la taille varie avec la valeur, donc
-    // l'en-tête n'a pas une taille fixe et l'offset du texte peut être impair.
+    // Unsigned LEB128. Note that the size varies with the value, so the header
+    // has no fixed length and the text offset can land on an odd byte.
     private static int ReadVarint(ReadOnlySpan<byte> b, ref int i)
     {
         int value = 0, shift = 0;

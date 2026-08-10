@@ -1,134 +1,134 @@
-# Classement des notes — zéro admin, zéro coût, zéro dépendance à la langue
+# Filing notes — no admin, no cost, no language dependency
 
-Ce document a été réécrit après mesure sur un corpus réel de 99 notes. Les
-chiffres qu'il cite viennent de `nptidy analyze`, pas d'une intuition.
+Written after measuring against a real corpus. The figures come from
+`nptidy analyze`, not from intuition.
 
-## La contrainte qui a tout décidé
+*Version française : [CLASSIFICATION.fr.md](CLASSIFICATION.fr.md).*
 
-Un outil qui ne marche que sur des notes françaises ne vaut rien pour
-quelqu'un d'autre. Or la première approche tentée — listes de salutations, de
-mots vides, de jours de la semaine — était du sur-mesure pour un seul
-utilisateur. Pire, l'heuristique « un mot capitalisé en milieu de phrase est
-un nom propre » s'effondre en allemand, où tous les noms communs sont
-capitalisés, et n'a aucun sens en japonais.
+## The constraint that decided everything
 
-Tout ce qui suit est donc classé selon un seul critère : **est-ce que ça
-marche chez quelqu'un d'autre, dans une autre langue ?**
+A tool that only works on one person's notes, in one language, is worth
+nothing to anybody else. The first attempt — lists of greetings, stop words
+and weekday names — was bespoke for a single user. Worse, the heuristic "a
+capitalised word mid-sentence is a proper noun" collapses in German, where
+every common noun is capitalised, and is meaningless in Japanese.
 
-## Niveau 1 — le titre explicite (mécanisme principal)
+So everything below is judged against one criterion: **does it work for
+someone else, in another language?**
 
-Une note dont la première ligne commence par `#` déclare son thème.
+## Level 1 — the explicit heading (primary mechanism)
+
+A note whose first line starts with `#` declares its theme.
 
 ```
 # project beta
-le lien pour les testeurs, à renvoyer à Camille
+the link for the testers
 ```
 
-→ thème `project-beta`, créé à la volée s'il n'existe pas.
+→ theme `project-beta`, created on the fly.
 
-C'est le seul mécanisme à la fois sans administration et **totalement
-indépendant de la langue** : la catégorie n'est pas devinée, elle est
-déclarée, dans les mots de l'utilisateur. `# Rechnungen`, `# 仕事のメモ` et
-`# работа` fonctionnent à l'identique — c'est couvert par les tests.
+The category is not guessed, it is declared, in the user's own words.
+`# Rechnungen`, `# 仕事のメモ` and `# работа` behave identically — covered by
+tests.
 
-### Pourquoi un marqueur explicite et pas une devinette
+### Why an explicit marker and not a guess
 
-Il est tentant de traiter toute première ligne courte comme un titre. Mesuré
-sur le corpus réel : **11 % des notes ont une première ligne d'allure
-« titre », et la totalité sont des faux positifs** — codes couleur
-(`2e343b 4a5568 1c1f26`), numéros de port (`port 5432`), horaires
-(`mercredi 10h 14h`), et deux mots de passe.
+It is tempting to treat any short first line as a heading. Measured on the
+real corpus: **11% of notes have a heading-shaped first line, and every single
+one is a false positive** — colour codes (`2e343b 4a5568 1c1f26`), port
+numbers (`port 5432`), schedules, and two passwords.
 
-Chacun aurait créé un thème-poubelle. Le marqueur ramène l'ambiguïté à zéro
-pour le coût d'un caractère. `NoteHeading.GuessImplicit` conserve la
-devinette, mais uniquement pour mesurer — jamais pour classer.
+Each would have created a junk theme. The marker removes the ambiguity for the
+cost of one character. `NoteHeading.GuessImplicit` keeps the guess, but only
+to measure it — never to file.
 
-## Niveau 2 — rattachement par similarité (repli)
+### Put a separator after the theme
 
-Une note sans `#` doit quand même aller quelque part. On la compare aux
-thèmes existants et on la rattache au plus proche, au-dessus d'un seuil.
+The theme should be followed by a space or a newline. Without one, the theme
+and the content run together — `#projectHi there!` — and nothing marks where
+the theme ends.
 
-La similarité se calcule en **TF-IDF cosinus** sur le contenu accumulé de
-chaque thème. Le point important : la pondération TF-IDF ne connaît aucune
-langue. Elle mesure une distribution, pas un vocabulaire.
+This matters most for **multi-word themes**, written with a hyphen
+(`#project-mail`): glued to content they become undecidable, because
+`project-mailsomething` is a perfectly plausible single token. A single space
+makes them exact.
 
-Deux réglages appris à la mesure :
+`ThemeVocabulary` recovers glued themes statistically (see level 3), but a
+separator is exact and costs nothing.
 
-- **TF sous-linéaire** (`1 + log(tf)`). Sans ça, une note qui répète 40 fois
-  le même mot écrase tout le classement — c'est exactement ce qui s'est passé
-  au premier essai, où le top était `fr`, `ville`, `24`, `00`.
-- **Rejet des tokens purement numériques.** Horaires, dates et montants sont
-  omniprésents dans des notes personnelles et n'identifient aucun sujet.
+## Level 2 — filing by mention (fallback)
 
-Sous le seuil, la note va dans `inbox`. Pas de thème inventé au hasard.
+A note without a heading still has to go somewhere. We look for the name of a
+theme the user **already declared elsewhere**. A new theme is never invented,
+so the vocabulary stays theirs, in their language.
 
-## Niveau 3 — les statistiques dérivées du corpus
+Deliberately conservative, because a wrong filing costs more than an unfiled
+note — it teaches the user to distrust the tool:
 
-`CorpusProfile` déduit des données ce que les autres outils codent en dur :
+- **whole-token comparison**, so `play` does not match inside `display`;
+- a multi-word theme only counts when all of its tokens appear in sequence;
+- themes shorter than four characters are ignored as mentions, since short
+  names collide with ordinary words constantly;
+- **outright refusal** when two themes are cited comparably, with a required
+  margin of 2×.
 
-| Déduit | Comment | Vérifié |
+Measured: this recovered 5 of the 7 previously unfiled notes, including three
+whose marker had been mistyped.
+
+Its weakness is honest: a single mention is a weak signal. Raising the
+threshold to two mentions trades recall for precision.
+
+## Level 3 — statistics derived from the corpus
+
+`CorpusProfile` derives from the data what other tools hardcode:
+
+| Derived | How | Verified |
 |---|---|---|
-| Mots vides | tout token présent dans plus de 25 % des notes | sur le corpus réel : `le, de, pas, la, et, pour, les, un, en, je…` |
-| Mots d'ouverture | premiers mots récurrents des notes | trouve `salut` en français et `hi` en anglais, **même code** |
-| Rareté d'un terme | IDF | fait remonter `streamelements`, enterre `faut` |
+| Stop words | any token in more than 25% of notes | French corpus yields `le, de, la, et…`; English yields `the, and, to` |
+| Opening words | recurring first words | finds `salut` in French and `hi` in English, **same code** |
+| Term rarity | IDF | surfaces project names, buries filler |
 
-Aucune de ces listes n'est écrite nulle part. Sur un corpus anglais, la même
-classe produit `the`, `and`, `to`. Les tests le vérifient sur du français, de
-l'anglais et de l'allemand.
+None of these lists is written anywhere. Tests verify the behaviour on French,
+English and German corpora.
 
-C'est ce qui rend le repli du niveau 2 transposable.
+Two settings learned by measuring:
 
-## Ce qui reste spécifique au français, et qui est optionnel
+- **Sublinear TF** (`1 + log(tf)`). Without it, a note repeating one word
+  forty times crushes the ranking — exactly what happened on the first run.
+- **Reject purely numeric tokens.** Times, dates and amounts are everywhere in
+  personal notes and identify no subject.
 
-`NoteSignals` détecte les brouillons de message par salutation, les formules
-de politesse et les noms propres par capitalisation. **Ces signaux sont des
-compléments, jamais le socle.** Ils sont documentés comme tels dans le code.
+## What was deliberately dropped
 
-Seuls les URL et les domaines y sont réellement universels — et ils sont
-étonnamment informatifs : le domaine d'une plateforme, d'un hébergeur ou
-d'un fournisseur identifie un projet sans ambiguïté.
+**Automatic theme creation.** Once the user names themes with `#`, clustering
+only invents names they did not choose — which was the original problem.
+`CorpusProfile` and `NoteSignals` remain as diagnostics behind
+`nptidy analyze`, not as the filing backbone.
 
-## Ce que ça donne sur le corpus réel
+## What stays language-specific, and optional
 
-| Signal | Notes | Part |
-|---|---|---|
-| Brouillon de message | 12 | 12,1 % |
-| Registre épistolaire | 15 | 15,2 % |
-| Marqueurs techniques | 15 | 15,2 % |
-| Contient une URL | 12 | 12,1 % |
-| Moins de 80 caractères | 13 | 13,1 % |
+`NoteSignals` detects message drafts by greeting, politeness formulas and
+proper nouns by capitalisation. **These are complements, never the backbone**,
+and the code says so.
 
-Longueur médiane 705 caractères, maximum 25 181.
+Only URLs and domains are genuinely universal there — and they are
+surprisingly informative: the domain of a platform, a host or a vendor
+identifies a project unambiguously.
 
-## Le démarrage à froid
+## Cost
 
-Les 100 notes existantes n'ont pas de `#`. Elles passeront donc toutes par le
-repli, ce qui produira un classement approximatif — c'est attendu, et sans
-gravité : le classement s'améliore à mesure que les notes récentes portent un
-titre.
+No model, no API, no connection. TF-IDF over a hundred notes costs
+milliseconds. Filing is **free and offline by construction**, not by
+configuration.
 
-Trois options, à trancher à l'usage :
+A local embedding model could improve the level 2 fallback later, but it is
+not required — and it would cost ~150 MB of RAM in bursts for an uncertain
+gain on short notes.
 
-1. Tout envoyer dans `inbox` et titrer au fil de l'eau.
-2. Lancer le niveau 2 sur tout le corpus et corriger à la main.
-3. Une passe interactive unique, note par note.
+## Order of work
 
-L'option 1 est la plus honnête : elle n'invente rien.
-
-## Coût
-
-Aucun modèle, aucune API, aucune connexion. TF-IDF sur 100 notes coûte
-quelques millisecondes. Le classement est **gratuit et hors ligne par
-construction**, pas par configuration.
-
-Un modèle d'embedding local reste possible plus tard pour améliorer le repli
-du niveau 2, mais il n'est pas nécessaire — et il coûterait 150 Mo de RAM en
-rafale pour un gain incertain sur des notes courtes.
-
-## Ordre de travail
-
-1. `nptidy analyze` pour regarder son propre corpus.
-2. Niveau 1 : titres explicites. Simple, exact, sans risque.
-3. Niveau 2 : repli TF-IDF, réglé en `--dry-run` jusqu'à ce que le classement
-   paraisse juste.
-4. Seulement ensuite, brancher l'écriture.
+1. `nptidy analyze` to look at your own corpus.
+2. Level 1: explicit headings. Simple, exact, risk-free.
+3. Level 2: mention fallback, tuned with `--dry-run` until the filing looks
+   right.
+4. Only then wire up writing.

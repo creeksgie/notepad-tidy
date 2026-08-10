@@ -65,7 +65,7 @@ public class ThemeMentionTests
         var match = ThemeMention.FindInBody("the project invoice is late", Vocabulary);
 
         Assert.False(match.Found);
-        Assert.Contains("ambigu", match.Reason);
+        Assert.Contains("ambiguous", match.Reason);
     }
 
     [Fact]

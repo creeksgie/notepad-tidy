@@ -3,8 +3,8 @@ using NotepadTidy.Core.IO;
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// Lecture du TabState. Ne fait que lire et énumérer — la logique de fusion
-/// vit dans <see cref="TabMerger"/>.
+/// Reads the TabState folder. Only reads and enumerates — the merging logic
+/// lives in <see cref="TabMerger"/>.
 /// </summary>
 public sealed class TabStore(TabPaths paths, ITabFileSystem fs)
 {
@@ -13,7 +13,7 @@ public sealed class TabStore(TabPaths paths, ITabFileSystem fs)
 
     public static TabStore Default() => new(TabPaths.Default(), new WindowsTabFileSystem());
 
-    /// <summary>Les .bin d'onglets, hors enregistrements d'état et .bak.</summary>
+    /// <summary>Tab .bin files, excluding state records and .bak files.</summary>
     public IEnumerable<string> EnumerateTabFiles()
     {
         foreach (var path in FileSystem.EnumerateFiles(Paths.TabStateDir, "*.bin"))
@@ -35,9 +35,8 @@ public sealed class TabStore(TabPaths paths, ITabFileSystem fs)
     public TabRecord Read(Guid id) => TabRecord.Parse(id, FileSystem.ReadAllBytes(Paths.TabFile(id)));
 
     /// <summary>
-    /// Copie intégrale de LocalState. À appeler avant toute écriture : ces
-    /// notes n'existent nulle part ailleurs, c'est tout le principe des
-    /// onglets non sauvegardés.
+    /// Full copy of LocalState. Call this before any write: these notes exist
+    /// nowhere else, which is the whole point of unsaved tabs.
     /// </summary>
     public int Backup(string destination)
     {

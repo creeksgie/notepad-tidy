@@ -1,13 +1,13 @@
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// CRC32 tel que Notepad l'utilise dans les fichiers TabState.
+/// CRC32 as Notepad uses it in TabState files.
 ///
-/// Polynôme 0xEDB88320 (zlib, réfléchi), init et XOR final à 0xFFFFFFFF.
-/// La subtilité qui coûte cher : le résultat est stocké en BIG-ENDIAN dans
-/// le fichier, alors que tout le reste du format est little-endian.
+/// Polynomial 0xEDB88320 (zlib, reflected), init and final XOR both
+/// 0xFFFFFFFF. The costly subtlety: the result is stored BIG-ENDIAN in the
+/// file, while everything else in the format is little-endian.
 ///
-/// Voir docs/FORMAT.md §5. Validé sur 106 onglets réels.
+/// See docs/FORMAT.md §5. Validated against 106 real tabs.
 /// </summary>
 public static class Crc32
 {
@@ -35,13 +35,13 @@ public static class Crc32
     }
 
     /// <summary>
-    /// Plage couverte par le CRC dans un fichier TabState : [3 .. L-5].
-    /// On saute le magic "NP" et l'octet de séquence, on exclut le CRC.
+    /// Range covered by the CRC in a TabState file: [3 .. L-5]. The "NP" magic
+    /// and the sequence byte are skipped; the CRC itself is excluded.
     /// </summary>
     public static uint ComputeForRecord(ReadOnlySpan<byte> file)
         => Compute(file.Slice(3, file.Length - 7));
 
-    /// <summary>CRC stocké dans les 4 derniers octets, en big-endian.</summary>
+    /// <summary>CRC stored in the last four bytes, big-endian.</summary>
     public static uint ReadStored(ReadOnlySpan<byte> file)
     {
         int n = file.Length;

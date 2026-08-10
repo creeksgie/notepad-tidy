@@ -3,8 +3,8 @@ using NotepadTidy.Core.IO;
 namespace NotepadTidy.Core.Tests;
 
 /// <summary>
-/// Système de fichiers en mémoire. Permet de tester la fusion — qui supprime
-/// des fichiers — sans jamais approcher un vrai TabState.
+/// In-memory file system. Lets the merge — which deletes files — be tested
+/// without ever going near a real TabState folder.
 /// </summary>
 public sealed class FakeTabFileSystem : ITabFileSystem
 {
@@ -47,8 +47,8 @@ public sealed class FakeNotepadGuard : INotepadGuard
     public FakeNotepadGuard(params bool[] answers) => _answers = new Queue<bool>(answers);
 
     /// <summary>
-    /// Chaque interrogation consomme une réponse, ce qui permet de simuler un
-    /// Notepad qui redémarre au milieu de l'opération.
+    /// Each query consumes one answer, which lets a test simulate Notepad
+    /// restarting in the middle of an operation.
     /// </summary>
     public bool IsRunning => _answers.Count > 0 ? _answers.Dequeue() : false;
 }

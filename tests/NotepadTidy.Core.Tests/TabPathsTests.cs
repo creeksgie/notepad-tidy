@@ -36,13 +36,12 @@ public class TabPathsTests
 
     [Fact]
     public void IsRealNotepadState_IsFalseForSandbox()
-        => Assert.False(new TabPaths(@"C:\un\bac\a\sable").IsRealNotepadState);
+        => Assert.False(new TabPaths(@"C:\some\sandbox").IsRealNotepadState);
 
     /// <summary>
-    /// Le point sensible : --path ne doit jamais servir de contournement des
-    /// protections. Si le chemin désigne le vrai dossier de Notepad — quelles
-    /// que soient la casse ou la présence d'un séparateur final — les gardes
-    /// liées au processus doivent rester actives.
+    /// The sensitive point: --path must never become a way around the safety
+    /// guards. When the given path denotes Notepad's real folder — whatever the
+    /// casing or a trailing separator — the process guards must stay active.
     /// </summary>
     [Fact]
     public void IsRealNotepadState_IsTrueForRealPath()
@@ -60,8 +59,8 @@ public class TabPathsTests
     [Fact]
     public void IsRealNotepadState_ResolvesRelativeTraversal()
     {
-        // Un chemin détourné qui retombe sur le vrai dossier ne doit pas
-        // passer pour un bac à sable.
+        // A roundabout path that lands back on the real folder must not pass
+        // for a sandbox.
         var real = TabPaths.Default().LocalState;
         var detoured = Path.Combine(real, "TabState", "..");
 

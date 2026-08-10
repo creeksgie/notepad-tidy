@@ -45,7 +45,7 @@ public static class ThemeMention
         // Whole-token comparison, so "play" does not match inside "display".
         // Tokenisation also folds case and diacritics.
         var tokens = CorpusProfile.Tokenize(note).ToList();
-        if (tokens.Count == 0) return ThemeMatch.None("note vide");
+        if (tokens.Count == 0) return ThemeMatch.None("empty note");
 
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var theme in vocabulary.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -64,7 +64,7 @@ public static class ThemeMention
             if (hits > 0) counts[theme] = hits;
         }
 
-        if (counts.Count == 0) return ThemeMatch.None("aucun thème connu cité");
+        if (counts.Count == 0) return ThemeMatch.None("no known theme cited");
 
         var ranked = counts.OrderByDescending(kv => kv.Value)
                            .ThenByDescending(kv => kv.Key.Length)
@@ -75,9 +75,9 @@ public static class ThemeMention
 
         if (runnerUp > 0 && best.Value < runnerUp * margin)
             return new ThemeMatch(null, best.Value, runnerUp,
-                $"ambigu : {best.Key} ({best.Value}) contre {ranked[1].Key} ({runnerUp})");
+                $"ambiguous: {best.Key} ({best.Value}) against {ranked[1].Key} ({runnerUp})");
 
-        return new ThemeMatch(best.Key, best.Value, runnerUp, "mention dans le corps");
+        return new ThemeMatch(best.Key, best.Value, runnerUp, "mentioned in body");
     }
 
     private static int CountSequences(List<string> tokens, List<string> sequence)

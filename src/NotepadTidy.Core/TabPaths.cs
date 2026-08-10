@@ -1,8 +1,8 @@
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// Résolution des chemins du TabState. Pure, sans I/O — donc testable sans
-/// Windows et sans Notepad installé.
+/// Path resolution for the TabState folder. Pure, no I/O — so it is testable
+/// without Windows and without Notepad installed.
 /// </summary>
 public sealed class TabPaths(string localState)
 {
@@ -16,9 +16,9 @@ public sealed class TabPaths(string localState)
         "Packages", "Microsoft.WindowsNotepad_8wekyb3d8bbwe", "LocalState"));
 
     /// <summary>
-    /// Vrai si ce chemin est le vrai dossier de Notepad. Sert à décider si les
-    /// protections liées au processus s'appliquent : sur un bac à sable, elles
-    /// n'ont pas lieu d'être ; sur le vrai dossier, elles sont obligatoires.
+    /// True when this path is Notepad's real folder. Decides whether the
+    /// process-related protections apply: they are pointless on a sandbox and
+    /// mandatory on the real folder.
     /// </summary>
     public bool IsRealNotepadState => string.Equals(
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(LocalState)),
@@ -28,9 +28,9 @@ public sealed class TabPaths(string localState)
     public string TabFile(Guid id) => Path.Combine(TabStateDir, $"{id}.bin");
 
     /// <summary>
-    /// Les enregistrements d'état .0.bin / .1.bin. Ce ne sont pas des
-    /// sauvegardes : ils rejouent la longueur du contenu et contrediraient un
-    /// onglet réécrit. Voir docs/FORMAT.md §6.
+    /// The .0.bin / .1.bin state records. These are not backups: they replay
+    /// the content length and would contradict a rewritten tab.
+    /// See docs/FORMAT.md §6.
     /// </summary>
     public IEnumerable<string> StateRecordFiles(Guid id)
     {
@@ -38,7 +38,7 @@ public sealed class TabPaths(string localState)
         yield return Path.Combine(TabStateDir, $"{id}.1.bin");
     }
 
-    /// <summary>Vrai pour un .0.bin / .1.bin, qui ne sont pas des onglets.</summary>
+    /// <summary>True for a .0.bin / .1.bin file, which are not tabs.</summary>
     public static bool IsStateRecord(string path)
     {
         var name = Path.GetFileName(path);

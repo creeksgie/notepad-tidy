@@ -1,228 +1,243 @@
-# Format binaire du TabState de Notepad (Windows 11)
+# Notepad TabState binary format (Windows 11)
 
-Rétro-ingénierie complète, validée empiriquement sur 106 onglets réels
-le 2026-08-10. Tout ce qui est marqué ✅ a été vérifié sur des données
-réelles, pas déduit.
+Complete reverse engineering, validated empirically against 106 real tabs.
+Everything marked ✅ was verified on real data, not inferred.
 
-## 1. Emplacement
+*Version française : [FORMAT.fr.md](FORMAT.fr.md).*
+
+## 1. Location
 
 ```
 %LOCALAPPDATA%\Packages\Microsoft.WindowsNotepad_8wekyb3d8bbwe\LocalState\
 ├── TabState\
-│   ├── {guid}.bin          ← un onglet (contenu réel)
-│   ├── {guid}.0.bin        ← enregistrement d'état, séquence 0
-│   ├── {guid}.1.bin        ← enregistrement d'état, séquence 1
-│   └── {guid}.bin.bak      ← sauvegarde ponctuelle de Notepad
+│   ├── {guid}.bin          ← one tab (actual content)
+│   ├── {guid}.0.bin        ← state record, sequence 0
+│   ├── {guid}.1.bin        ← state record, sequence 1
+│   └── {guid}.bin.bak      ← occasional Notepad backup
 └── WindowState\
-    ├── {guid}.0.bin        ← index des onglets, séquence 0
-    └── {guid}.1.bin        ← index des onglets, séquence 1
+    ├── {guid}.0.bin        ← tab index, sequence 0
+    └── {guid}.1.bin        ← tab index, sequence 1
 ```
 
-Notepad 11 est une application Store en bac à sable
-(`Microsoft.WindowsNotepad_8wekyb3d8bbwe`). **Aucune API d'extension, aucun
-point de plugin.** Un « mod » au sens propre est impossible : la seule voie
-est un outil externe qui manipule ces fichiers pendant que Notepad est fermé.
+Notepad 11 is a sandboxed Store application
+(`Microsoft.WindowsNotepad_8wekyb3d8bbwe`). **No extension API, no hook
+point.** A plugin in the proper sense is impossible: the only route is an
+external tool manipulating these files while Notepad is closed.
 
-## 2. Rien n'est chiffré ni obfusqué ✅
+## 2. Nothing is encrypted or obfuscated ✅
 
-Le contenu est du **UTF-16LE brut**, précédé d'un en-tête binaire mince et
-suivi d'un CRC. Aucune compression, aucun chiffrement, aucune obfuscation.
+Content is **raw UTF-16LE**, preceded by a thin binary header and followed by
+a CRC. No compression, no encryption, no obfuscation.
 
-## 3. Verrouillage ✅
+## 3. Locking ✅
 
-Tant que Notepad tourne, il maintient un **handle exclusif** sur chaque
-`.bin` d'onglet ouvert. Conséquences :
+While Notepad runs it holds an **exclusive handle** on every open tab file.
 
-- Pour **lire** pendant que Notepad tourne : ouvrir en `FileShare.ReadWrite`.
-  Un `File.ReadAllBytes()` classique échoue avec `IOException`.
-- Pour **écrire** : Notepad doit être fermé. Il maintient l'état en mémoire
-  et réécrit les fichiers à sa guise ; toute écriture concurrente est perdue.
+- To **read** while Notepad runs: open with `FileShare.ReadWrite`. A plain
+  `File.ReadAllBytes()` fails with `IOException`.
+- To **write**: Notepad must be closed. It keeps state in memory and rewrites
+  files at will; any concurrent write is lost.
 
-Notepad n'écrit pas « à la fermeture » : il écrit **en continu** pendant la
-frappe. La fermeture ne fait que flusher et relâcher les verrous.
+Notepad does not write "on close": it writes **continuously** as you type.
+Closing only flushes and releases the locks.
 
-## 4. Structure d'un onglet `{guid}.bin`
+## 4. Structure of a `{guid}.bin` tab
 
-| Offset | Taille | Contenu |
-|--------|--------|---------|
+| Offset | Size | Contents |
+|--------|------|----------|
 | 0 | 2 | Magic `4E 50` = `"NP"` |
-| 2 | 1 | Numéro de séquence (`00` sur les fichiers principaux) |
-| 3 | 1 | **Flag** : `00` = note volante, `01` = onglet lié à un fichier |
-| 4 | 1 | Inconnu, vaut `01` sur tous les échantillons |
-| 5 | varint | Position du curseur — début de sélection |
-| … | varint | Position du curseur — fin de sélection |
+| 2 | 1 | Sequence number (`00` on main files) |
+| 3 | 1 | **Flag**: `00` = unsaved note, `01` = tab backed by a file |
+| 4 | 1 | Unknown, `01` on every sample |
+| 5 | varint | Caret position — selection start |
+| … | varint | Caret position — selection end |
 | … | 3 | `01 00 00` |
-| … | 1 | **Compteur N** — observé à `02` ou `03` |
-| … | N | N octets valant `01` |
-| … | varint | **Longueur du contenu, en caractères UTF-16** |
-| … | 2×n | Le texte, UTF-16LE, sans BOM |
-| L-5 | 1 | Marqueur, vaut `01` |
+| … | 1 | **Counter N** — observed as `02` or `03` |
+| … | N | N bytes of value `01` |
+| … | varint | **Content length, in UTF-16 characters** |
+| … | 2×n | The text, UTF-16LE, no BOM |
+| L-5 | 1 | Marker, value `01` |
 | L-4 | 4 | **CRC32, big-endian** |
 
-### Le flag de l'octet 3
+### The flag at byte 3
 
-- `00` → note volante, jamais sauvegardée. **C'est ce que l'outil traite.**
-- `01` → l'onglet reflète un vrai fichier sur disque. **Ne jamais toucher.**
-  L'en-tête contient alors un chemin, et le layout ci-dessus ne s'applique pas.
+- `00` → loose note, never saved. **This is what the tool handles.**
+- `01` → the tab mirrors a real file on disk. **Never touch it.** The header
+  then contains a path and the layout above does not apply.
 
-Sur le corpus de référence : 100 notes volantes, 6 liées à un fichier.
+Reference corpus: 100 loose notes, 6 file-backed.
 
 ### Varints
 
-Encodage LEB128 non signé, 7 bits utiles par octet, bit de poids fort =
-« il y a une suite ».
+Unsigned LEB128, 7 useful bits per byte, high bit meaning "more follows".
 
 ```
 0x0A            → 10
 0xDF 0x02       → 0x5F | (0x02 << 7) = 95 + 256 = 351
 ```
 
-**Piège majeur** : la taille du varint varie avec la valeur, donc
-**l'en-tête n'a pas une taille fixe**. Sur le corpus de référence :
+**Major trap**: varint size varies with the value, so **the header has no
+fixed length**. Reference corpus:
 
-| Taille du varint de longueur | Nombre de fichiers |
+| Length-varint size | Files |
 |---|---|
-| 1 octet | 33 |
-| 2 octets | 64 |
-| 3 octets | 3 |
+| 1 byte | 33 |
+| 2 bytes | 64 |
+| 3 bytes | 3 |
 
-Conséquences :
+Consequences:
 
-1. Le texte commence à l'offset **15, 18, ou davantage** selon les cas.
-2. **Cet offset peut être impair.** Décoder tout le buffer en UTF-16 depuis
-   l'offset 0 pour y chercher du texte produit du charabia sur ces
-   fichiers-là — il faut parser l'en-tête proprement.
-3. Faire franchir à une note le seuil de 127 ou 16383 caractères fait
-   grossir l'en-tête d'un octet et **décale tout le bloc de texte**. Il n'y a
-   pas de patch en place : on réécrit le fichier entier.
+1. Text starts at offset **15, 18, or more** depending on the file.
+2. **That offset can be odd.** Decoding the whole buffer as UTF-16 from offset
+   0 to search for text produces garbage on those files — the header must be
+   parsed properly.
+3. Pushing a note past 127 or 16383 characters grows the header by one byte
+   and **shifts the entire text block**. There is no in-place patch: the whole
+   file gets rewritten.
 
-## 5. Le CRC32 ✅
+## 5. The CRC32 ✅
 
-C'est la pièce qui décide si Notepad accepte ou jette le fichier.
+This is what decides whether Notepad accepts or discards the file.
 
 ```
-Algorithme  : CRC32 standard (zlib)
-Polynôme    : 0xEDB88320  (réfléchi)
-Init        : 0xFFFFFFFF
-XOR final   : 0xFFFFFFFF
-Plage       : octets [3 .. L-5]  — on saute le magic et l'octet de séquence
-Stockage    : BIG-ENDIAN sur les 4 derniers octets
+Algorithm : standard CRC32 (zlib)
+Polynomial: 0xEDB88320  (reflected)
+Init      : 0xFFFFFFFF
+Final XOR : 0xFFFFFFFF
+Range     : bytes [3 .. L-5]  — magic and sequence byte skipped
+Storage   : BIG-ENDIAN in the last four bytes
 ```
 
-**Validé sur 106 fichiers sur 106, zéro échec.**
+**Validated on 106 files out of 106, zero failures.**
 
-Le piège qui coûte une soirée : le CRC est stocké en big-endian alors que
-tout le reste du format (varints, UTF-16) est little-endian.
+The trap that costs an evening: the CRC is stored big-endian while everything
+else in the format (varints, UTF-16) is little-endian.
 
-Trouvé par force brute sur l'espace {polynôme réfléchi/normal} ×
-{init 0 / 0xFFFFFFFF} × {xor final 0 / 0xFFFFFFFF} × {offset de départ 0..8}
-× {LE, BE}, avec exigence de match simultané sur 3 fichiers de tailles
-différentes. Une seule combinaison survit.
+Found by brute force over {reflected, normal polynomial} × {init 0,
+0xFFFFFFFF} × {final XOR 0, 0xFFFFFFFF} × {start offset 0..8} × {LE, BE},
+requiring a simultaneous match on three files of different sizes. Exactly one
+combination survives.
 
-## 6. Les enregistrements d'état `.0.bin` / `.1.bin` ⚠️
+## 6. State records `.0.bin` / `.1.bin` ⚠️
 
-Ce **ne sont pas des sauvegardes**. Ce sont des enregistrements de 22 octets
-qui rejouent les métadonnées de l'onglet :
+These are **not backups**. They are 22-byte records replaying the tab's
+metadata:
 
 ```
 4E 50 00 0E 00 D5 05 DF 02 DF 02 01 00 00 03 01 01 01 | E7 71 0F 2A
       ^^          ^^^^^ ^^^^^ ^^^^^ ^^^^^^^^^^^^^^^^^   ^^^^^^^^^^^
-      seq         ?     351   351   même bloc config     CRC
+      seq         ?     351   351   same config block    CRC
 ```
 
-`DF 02` = 351 = **exactement la longueur du contenu principal**.
+`DF 02` = 351 = **exactly the main content length**.
 
-Les deux fichiers alternent via l'octet 2 (séquence `00` / `01`), en double
-buffering, pour qu'une écriture interrompue ne corrompe jamais l'état.
+The two files alternate through byte 2 (sequence `00` / `01`), double
+buffering so an interrupted write never corrupts the state.
 
-**Impact critique** : si on réécrit le `.bin` avec une longueur différente
-sans traiter ces enregistrements, ils continuent d'annoncer l'ancienne
-longueur et contredisent le contenu.
+**Critical impact**: rewriting the `.bin` with a different length while
+leaving these records in place makes them announce the old length and
+contradict the content.
 
-Traitement retenu et validé : **les supprimer**. Notepad n'a pas bronché et
-les recrée à la prochaine modification.
+Chosen and validated handling: **delete them**. Notepad did not object and
+recreates them on the next edit.
 
-## 7. Le `WindowState` — à ne pas toucher ✅
+## 7. Keystroke journal ⚠️
 
-`WindowState\{guid}.{0,1}.bin` contient la **liste ordonnée des GUID
-d'onglets**, à raison de 16 octets bruts par GUID (`Guid.ToByteArray()`),
-précédée d'un en-tête d'une centaine d'octets.
+Discovered while testing on a corpus the user had just edited.
 
-Vérifié : les 106 GUID d'onglets présents sur disque étaient tous
-référencés dans ce fichier.
+While Notepad runs, an edited tab is **not rewritten**. Notepad appends a
+journal to the end of the `.bin`: one 9-byte record per typed character, each
+with its own CRC.
 
-Son checksum **ne suit pas** le schéma de la section 5 — aucun offset de
-départ de 0 à 6 ne matche. Il reste non résolu.
+```
+00 00 01 23 00 | 79 49 EA 4B     '#'
+01 00 01 44 00 | 6E 95 3E 9B     'D'
+02 00 01 61 00 | C1 C6 94 AC     'a'
+```
 
-**Ce n'est pas grave, parce qu'on n'en a pas besoin.** Test décisif du
-2026-08-10 :
+So the `.bin` holds the text as of the last consolidation, followed by pending
+keystrokes. In one measurement, 91 notes out of 93 were in that state.
 
-> Suppression d'un `.bin` d'onglet en laissant son GUID orphelin dans le
-> WindowState, puis relance de Notepad.
+The parser detects this as `LayoutMismatch` — the declared length no longer
+matches the file size — and **refuses the file**. That is the correct
+behaviour: rewriting from the base text would have erased the pending edits.
+
+**Closing Notepad consolidates everything**: journals disappear and every file
+parses cleanly again. This is why the tool only ever writes with Notepad
+closed.
+
+## 8. `WindowState` — leave it alone ✅
+
+`WindowState\{guid}.{0,1}.bin` holds the **ordered list of tab GUIDs**, 16 raw
+bytes each (`Guid.ToByteArray()`), after a header of about a hundred bytes.
+
+Verified: all 106 tab GUIDs present on disk were referenced there.
+
+Its checksum does **not** follow the scheme in section 5 — no start offset
+from 0 to 6 matches. It remains unsolved.
+
+**That does not matter, because it is not needed.** Decisive test:
+
+> Delete a tab `.bin` while leaving its GUID orphaned in WindowState, then
+> restart Notepad.
 >
-> Résultat : Notepad démarre normalement, **n'affiche aucun onglet fantôme**,
-> ne plante pas, ne recrée pas le fichier, et ne se plaint pas. Les 105
-> autres onglets sont intacts. Confirmé visuellement dans la barre d'onglets.
+> Result: Notepad starts normally, **shows no phantom tab**, does not crash,
+> does not recreate the file and raises no complaint. The other 105 tabs are
+> intact. Confirmed visually in the tab bar.
 
-D'où la stratégie de l'outil : **recycler des GUID d'onglets existants**
-comme conteneurs thématiques. Leur GUID est déjà indexé, donc on ne touche
-jamais au WindowState.
+Hence the tool's strategy: **recycle existing tab GUIDs** as theme containers.
+Their GUID is already indexed, so WindowState is never touched.
 
-## 8. Écriture — validée de bout en bout ✅
+## 9. Writing — validated end to end ✅
 
-Test du 2026-08-10 : fusion d'une note de 12 caractères dans une note de
-351 caractères.
+Test: merging a 12-character note into a 351-character note.
 
-1. Parse des deux onglets
-2. Concaténation avec séparateur → 399 caractères
-3. Génération d'un `.bin` complet de 821 octets (en-tête + varints + texte
-   + marqueur + CRC recalculé)
-4. Écriture dans le `.bin` de la cible, suppression de la source,
-   suppression des enregistrements d'état de la cible
-5. Relance de Notepad
+1. Parse both tabs
+2. Concatenate with a separator → 399 characters
+3. Generate a complete 821-byte `.bin` (header + varints + text + marker +
+   recomputed CRC)
+4. Write it to the container, delete the source, delete the container's state
+   records
+5. Restart Notepad
 
-**Résultat : Notepad a accepté le fichier, l'a relu, et l'a réécrit sans
-rien changer — 821 octets, CRC toujours valide, contenu intact.** Il ne fait
-aucune distinction entre un fichier qu'il a produit et un fichier forgé.
+**Result: Notepad accepted the file, re-read it, and rewrote it unchanged —
+821 bytes, CRC still valid, content intact.** It draws no distinction between
+a file it produced and a forged one.
 
-C'est la preuve que la boucle complète de l'outil est réalisable.
+## 10. The counter variant — solved ✅
 
-## 9. La variante à compteur — résolue ✅
+An early parser treated `01 00 00 03 01 01 01` as a constant 7-byte block.
+Result: **83 files out of 100 verified, 17 failed**.
 
-Une première version du parseur traitait `01 00 00 03 01 01 01` comme un
-bloc constant de 7 octets. Résultat : **83 fichiers sur 100 se vérifiaient,
-17 échouaient**.
-
-La cause : ce bloc n'est pas de taille fixe. L'octet en 4ᵉ position est un
-**compteur**, suivi d'exactement N octets.
+The cause: the block is not fixed size. The fourth byte is a **counter**,
+followed by exactly N bytes.
 
 ```
-Compteur 03 :  01 00 00 03 01 01 01     (7 octets)
-Compteur 02 :  01 00 00 02 01 01        (6 octets)
+Counter 03 :  01 00 00 03 01 01 01     (7 bytes)
+Counter 02 :  01 00 00 02 01 01        (6 bytes)
 ```
 
-Supposer 7 octets décale d'un octet sur les fichiers à compteur `02`, et
-tout le reste du parsing part de travers.
+Assuming 7 bytes shifts everything by one on counter-`02` files, and the rest
+of the parse goes astray.
 
-Vérification après correction : **100 fichiers sur 100, zéro écart, zéro CRC
-invalide.** Le format est intégralement couvert.
+After the fix: **100 files out of 100, no mismatch, no invalid CRC.**
 
-La signification du compteur reste inconnue (nombre de champs optionnels ?
-version d'un sous-bloc ?), mais elle n'est pas nécessaire : il suffit de le
-lire pour sauter le bon nombre d'octets.
+The counter's meaning is still unknown, but reading it is enough.
 
-**Règle de sécurité maintenue** : le writer refuse de toucher tout fichier
-dont le layout ne se vérifie pas à l'octet près. Si une future mise à jour de
-Notepad introduit une variante inconnue, l'outil s'abstient au lieu de
-détruire. Un fichier mal réécrit, c'est une note perdue définitivement — ces
-notes n'ont, par définition, aucune copie ailleurs.
+## 11. Line endings ⚠️
 
-## 10. Fragilité dans le temps
+Notepad does not always write CRLF pairs — **lone `\r` characters occur**.
+Splitting note text on `'\n'` alone treats the whole note as a single line.
 
-Microsoft met Notepad à jour fréquemment et peut changer ce format sans
-préavis ni documentation. L'outil doit :
+## 12. Fragility over time
 
-- vérifier le magic `NP` et l'octet de version à chaque exécution ;
-- refuser de travailler si quoi que ce soit dévie, plutôt que de parser à
-  l'aveugle ;
-- sauvegarder `LocalState` avant toute écriture.
+Microsoft updates Notepad often and may change this format without notice or
+documentation. The tool therefore:
+
+- checks the `NP` magic and the version byte on every run;
+- treats byte 4 as a version sentinel — any other value yields
+  `UnknownVariant` and the file is refused rather than parsed blindly;
+- backs up `LocalState` before any write.
+
+The default behaviour on drift is **abstention**, never a silently shifted
+parse.

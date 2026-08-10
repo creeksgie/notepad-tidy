@@ -4,15 +4,14 @@ using System.Text;
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// Profil statistique d'un corpus de notes, entièrement dérivé des données.
+/// Statistical profile of a corpus of notes, derived entirely from the data.
 ///
-/// Aucune liste codée en dur : ni mots vides, ni salutations, ni jours de la
-/// semaine. Ce qui compte n'est pas <i>quel</i> mot c'est, mais <b>comment il
-/// se distribue</b> — et cette question a la même réponse en français, en
-/// anglais ou en allemand.
+/// No hardcoded list: no stop words, no greetings, no weekday names. What
+/// matters is not <i>which</i> word it is, but <b>how it is distributed</b> —
+/// and that question has the same answer in English, French or German.
 ///
-/// C'est ce qui rend le classement transposable à quelqu'un d'autre :
-/// le vocabulaire change, la statistique non.
+/// This is what makes filing transferable to someone else: the vocabulary
+/// changes, the statistics do not.
 /// </summary>
 public sealed class CorpusProfile
 {
@@ -22,16 +21,16 @@ public sealed class CorpusProfile
     public int NoteCount { get; }
 
     /// <summary>
-    /// Mots trop répandus dans CE corpus pour distinguer quoi que ce soit.
-    /// Ils émergent de la distribution : en français on retrouvera « faut »
-    /// ou « coup », en anglais « just » ou « need », sans rien changer au code.
+    /// Words too widespread in THIS corpus to distinguish anything. They emerge
+    /// from the distribution: an English corpus yields "the" and "and", a French
+    /// one yields "le" and "que", with no code change.
     /// </summary>
     public IReadOnlySet<string> StopWords { get; }
 
     /// <summary>
-    /// Premiers mots récurrents. Une note qui s'ouvre sur un mot que beaucoup
-    /// d'autres notes emploient en ouverture est très probablement un
-    /// brouillon de message — que ce mot soit « salut », « hi » ou « hallo ».
+    /// Recurring first words. A note opening on a word that many other notes
+    /// also open with is very likely a message draft — whether that word is
+    /// "hi", "salut" or "hallo".
     /// </summary>
     public IReadOnlySet<string> OpeningWords { get; }
 
@@ -67,8 +66,8 @@ public sealed class CorpusProfile
     }
 
     /// <summary>
-    /// Découpage sur les frontières de catégorie Unicode, sans présumer d'un
-    /// alphabet. Les chiffres sont conservés : « v2 », « gpt4 » distinguent.
+    /// Splits on Unicode category boundaries, assuming no particular alphabet.
+    /// Digits are kept: "v2" and "http2" carry meaning.
     /// </summary>
     public static IEnumerable<string> Tokenize(string text)
     {
@@ -82,8 +81,8 @@ public sealed class CorpusProfile
     }
 
     /// <summary>
-    /// Minuscule et diacritiques retirés, pour que « Événement » et
-    /// « evenement » soient le même mot. Neutre du point de vue de la langue.
+    /// Lowercased and stripped of diacritics, so that "Événement" and
+    /// "evenement" are the same word. Language-neutral.
     /// </summary>
     private static string Normalize(string token)
     {
@@ -99,9 +98,9 @@ public sealed class CorpusProfile
         => _documentFrequency.GetValueOrDefault(Normalize(token));
 
     /// <summary>
-    /// Rareté d'un mot dans le corpus. Élevée = discriminant. C'est la mesure
-    /// qui fait remonter « streamelements » et enterre « faut », sans qu'on ait
-    /// jamais nommé ni l'un ni l'autre.
+    /// How rare a word is in the corpus. High means discriminating. This is the
+    /// measure that surfaces project names and buries filler words, without
+    /// either ever being named in code.
     /// </summary>
     public double InverseDocumentFrequency(string token)
     {
@@ -109,7 +108,7 @@ public sealed class CorpusProfile
         return df == 0 ? 0 : Math.Log((double)NoteCount / df);
     }
 
-    /// <summary>Mots les plus caractéristiques d'une note, par score TF-IDF.</summary>
+    /// <summary>Most characteristic words of a note, by TF-IDF score.</summary>
     public IEnumerable<(string Token, double Score)> DistinctiveTokens(string note, int take = 5)
     {
         var termFrequency = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -120,17 +119,16 @@ public sealed class CorpusProfile
             .Where(kv => !StopWords.Contains(kv.Key)
                       && DocumentFrequency(kv.Key) >= 2
                       && !IsPurelyNumeric(kv.Key))
-            // TF sous-linéaire : une note qui répète 40 fois le même mot n'est
-            // pas 40 fois plus à propos. Sans ça, les notes longues écrasent
-            // tout le classement.
+            // Sublinear TF: a note repeating a word forty times is not forty
+            // times more relevant. Without this, long notes crush the ranking.
             .Select(kv => (kv.Key, Score: (1 + Math.Log(kv.Value)) * InverseDocumentFrequency(kv.Key)))
             .OrderByDescending(x => x.Score)
             .Take(take);
     }
 
     /// <summary>
-    /// Horaires, dates, montants : très fréquents dans des notes personnelles,
-    /// et sans aucune valeur pour identifier un sujet.
+    /// Times, dates and amounts: very common in personal notes and worthless
+    /// for identifying a subject.
     /// </summary>
     private static bool IsPurelyNumeric(string token)
     {
@@ -138,7 +136,7 @@ public sealed class CorpusProfile
         return true;
     }
 
-    /// <summary>Note s'ouvrant sur un mot d'ouverture récurrent du corpus.</summary>
+    /// <summary>Note opening on one of the corpus's recurring first words.</summary>
     public bool OpensLikeCorrespondence(string note)
     {
         var first = Tokenize(note).FirstOrDefault();

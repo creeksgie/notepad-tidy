@@ -1,37 +1,37 @@
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// Reconnaissance d'un titre en première ligne : « cette note appartient au
-/// thème X », écrit par l'utilisateur lui-même.
+/// Recognises a heading on the first line: "this note belongs to theme X",
+/// written by the user themselves.
 ///
-/// <para>C'est le seul mécanisme de classement du projet qui soit à la fois
-/// sans administration et <b>totalement indépendant de la langue</b> : la
-/// catégorie n'est pas devinée, elle est déclarée. Un utilisateur anglophone,
-/// allemand ou japonais obtient exactement le même comportement.</para>
+/// <para>This is the only filing mechanism in the project that is both
+/// administration-free and <b>completely language-independent</b>: the category
+/// is not guessed, it is declared. An English, German or Japanese user gets
+/// exactly the same behaviour.</para>
 ///
-/// <para>Les critères de reconnaissance sont structurels — longueur, nombre de
-/// mots, ponctuation finale — et non lexicaux. Aucun dictionnaire.</para>
+/// <para>Recognition criteria are structural — length, word count, trailing
+/// punctuation — never lexical. No dictionary.</para>
 /// </summary>
 public static class NoteHeading
 {
     public const int MaxLength = 60;
     public const int MaxWords = 8;
 
-    /// <summary>Ponctuation qui trahit une phrase plutôt qu'un titre.</summary>
-    private static readonly char[] SentenceEnders = ['.', '!', '?', ',', ';'];
-
-    /// <summary>Marqueur explicite de titre, à la markdown.</summary>
+    /// <summary>Explicit heading marker, markdown style.</summary>
     public const char Marker = '#';
 
+    /// <summary>Punctuation that betrays a sentence rather than a heading.</summary>
+    private static readonly char[] SentenceEnders = ['.', '!', '?', ',', ';'];
+
     /// <summary>
-    /// Titre <b>explicitement</b> déclaré : première ligne préfixée par
+    /// An <b>explicitly</b> declared heading: first line prefixed by
     /// <see cref="Marker"/>.
     ///
-    /// <para>Le préfixe n'est pas une coquetterie. Mesuré sur un corpus réel de
-    /// 99 notes, deviner le titre à la seule forme de la première ligne donne
-    /// 11 % de détections dont la totalité sont des faux positifs : codes
-    /// couleur, numéros de port, horaires, mots de passe. Un marqueur explicite
-    /// ramène l'ambiguïté à zéro pour le coût d'un caractère.</para>
+    /// <para>The prefix is not decoration. Measured on a real corpus of 99
+    /// notes, guessing the heading from the shape of the first line yields 11%
+    /// detections of which every single one is a false positive: colour codes,
+    /// port numbers, schedules, passwords. An explicit marker removes the
+    /// ambiguity entirely for the cost of one character.</para>
     /// </summary>
     public static string? ExtractExplicit(string note)
     {
@@ -43,9 +43,9 @@ public static class NoteHeading
     }
 
     /// <summary>
-    /// Titre <b>deviné</b> à la forme de la première ligne. Conservé pour
-    /// mesurer, mais à ne pas utiliser pour classer : voir le taux de faux
-    /// positifs documenté sur <see cref="ExtractExplicit"/>.
+    /// A heading <b>guessed</b> from the shape of the first line. Kept for
+    /// measurement only — do not file with it, see the false-positive rate
+    /// documented on <see cref="ExtractExplicit"/>.
     /// </summary>
     public static string? GuessImplicit(string note)
     {
@@ -58,15 +58,15 @@ public static class NoteHeading
         line = line.Trim();
         if (line.Length == 0 || line.Length > MaxLength) return false;
 
-        // Une phrase se termine par une ponctuation ; un titre, non.
+        // A sentence ends with punctuation; a heading does not.
         if (SentenceEnders.Contains(line[^1])) return false;
 
-        // Un titre est court. Le compte de mots reste valable pour les langues
-        // à espaces ; pour les autres, la limite de longueur suffit.
+        // A heading is short. The word count holds for space-separated
+        // languages; for the others the length limit is enough on its own.
         int words = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
         if (words > MaxWords) return false;
 
-        // Une URL seule n'est pas un titre : c'est le contenu de la note.
+        // A bare URL is not a heading, it is the content of the note.
         if (line.Contains("://", StringComparison.Ordinal)) return false;
 
         return true;
@@ -74,16 +74,15 @@ public static class NoteHeading
 
     private static string? FirstNonEmptyLine(string note)
     {
-        // '\r' isolé compris : Notepad n'écrit pas toujours des paires CRLF.
+        // Lone '\r' included: Notepad does not always write CRLF pairs.
         foreach (var line in note.Split('\r', '\n'))
             if (line.Trim().Length > 0) return line;
         return null;
     }
 
     /// <summary>
-    /// Canonical form of a heading, so that "Project — Beta" and
-    /// "project beta" denote the same theme. Letters and digits of any script
-    /// are preserved.
+    /// Canonical form of a heading, so that "Project — Beta" and "project beta"
+    /// denote the same theme. Letters and digits of any script are preserved.
     /// </summary>
     public static string Normalize(string heading)
         => string.Join('-', CorpusProfile.Tokenize(heading));

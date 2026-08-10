@@ -1,9 +1,9 @@
 namespace NotepadTidy.Core.IO;
 
 /// <summary>
-/// Accès disque, derrière une interface pour une seule raison : la fusion
-/// supprime des fichiers irrécupérables, elle doit être testable sans toucher
-/// au vrai TabState.
+/// Disk access, behind an interface for a single reason: merging deletes
+/// unrecoverable files, so it must be testable without touching a real
+/// TabState folder.
 /// </summary>
 public interface ITabFileSystem
 {
@@ -16,8 +16,8 @@ public interface ITabFileSystem
 }
 
 /// <summary>
-/// Notepad tourne-t-il ? Toute écriture est interdite si oui : il maintient
-/// l'état en mémoire et écraserait le travail à sa prochaine sauvegarde.
+/// Is Notepad running? Writing is forbidden while it is: Notepad keeps state
+/// in memory and would overwrite our work on its next save.
 /// </summary>
 public interface INotepadGuard
 {

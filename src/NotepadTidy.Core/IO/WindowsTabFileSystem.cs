@@ -2,14 +2,14 @@ using System.Diagnostics;
 
 namespace NotepadTidy.Core.IO;
 
-/// <summary>Implémentation réelle sur le disque.</summary>
+/// <summary>Real on-disk implementation.</summary>
 public sealed class WindowsTabFileSystem : ITabFileSystem
 {
     public bool FileExists(string path) => File.Exists(path);
 
     /// <summary>
-    /// Lecture tolérante au verrou exclusif que Notepad garde sur ses onglets
-    /// ouverts. Un File.ReadAllBytes échoue tant qu'il tourne.
+    /// Reads through the exclusive lock Notepad holds on its open tabs. A plain
+    /// File.ReadAllBytes fails for as long as Notepad is running.
     /// </summary>
     public byte[] ReadAllBytes(string path)
     {
@@ -35,12 +35,12 @@ public sealed class NotepadProcessGuard : INotepadGuard
 }
 
 /// <summary>
-/// Garde neutre, pour travailler sur une copie isolée du TabState. Notepad ne
-/// connaît que son propre dossier : sur un bac à sable, il ne peut rien
-/// écraser, donc l'attendre n'aurait aucun sens.
+/// Neutral guard, for working on an isolated copy of the TabState folder.
+/// Notepad only knows its own directory, so it cannot overwrite anything in a
+/// sandbox and waiting for it would make no sense.
 ///
-/// À n'utiliser que sur un chemin dont on a vérifié qu'il n'est PAS le
-/// LocalState réel — voir <see cref="TabPaths.IsRealNotepadState"/>.
+/// Only use this on a path verified NOT to be the real LocalState — see
+/// <see cref="TabPaths.IsRealNotepadState"/>.
 /// </summary>
 public sealed class SandboxGuard : INotepadGuard
 {

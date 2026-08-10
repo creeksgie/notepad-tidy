@@ -3,9 +3,9 @@ using NotepadTidy.Core;
 namespace NotepadTidy.Core.Tests;
 
 /// <summary>
-/// La fusion est le seul code du projet qui supprime des fichiers. Ces tests
-/// existent surtout pour verrouiller les cas de REFUS : c'est eux qui
-/// garantissent qu'on ne détruit pas une note mal comprise.
+/// Merging is the only code in the project that deletes files. These tests
+/// exist above all to pin down the REFUSAL paths: they are what guarantees we
+/// never overwrite a note we misread.
 /// </summary>
 public class TabMergerTests
 {
@@ -32,7 +32,7 @@ public class TabMergerTests
     public void Merge_AppendsSourcesIntoContainer()
     {
         var (merger, fs, paths) = Build(
-            tabs: [(Container, "conteneur"), (SourceA, "note A"), (SourceB, "note B")]);
+            tabs: [(Container, "container"), (SourceA, "note A"), (SourceB, "note B")]);
 
         var result = merger.Merge(Container, [SourceA, SourceB], Separator);
 
@@ -41,7 +41,7 @@ public class TabMergerTests
 
         var merged = TabRecord.Parse(Container, fs.ReadAllBytes(paths.TabFile(Container)));
         Assert.Equal(TabStatus.Ok, merged.Status);
-        Assert.Equal($"conteneur{Separator}note A{Separator}note B", merged.Text);
+        Assert.Equal($"container{Separator}note A{Separator}note B", merged.Text);
     }
 
     [Fact]
@@ -60,8 +60,8 @@ public class TabMergerTests
     [Fact]
     public void Merge_DeletesStaleStateRecordsOfContainer()
     {
-        // Ces enregistrements rejouent l'ancienne longueur : les laisser
-        // reviendrait à contredire le contenu fraîchement écrit.
+        // Those records replay the old length: leaving them would contradict
+        // the freshly written content.
         var (merger, fs, paths) = Build(tabs: [(Container, "c"), (SourceA, "a")]);
         foreach (var path in paths.StateRecordFiles(Container)) fs.Add(path, [0x4E, 0x50]);
 
@@ -88,11 +88,11 @@ public class TabMergerTests
     [Fact]
     public void Merge_RefusesWhenNotepadReturnsMidOperation()
     {
-        // Notepad absent au premier contrôle, revenu au second : rien ne doit
-        // partir sur le disque.
+        // Absent on the first check, back on the second: nothing must reach
+        // the disk.
         var paths = new TabPaths(@"X:\LocalState");
         var fs = new FakeTabFileSystem();
-        fs.Add(paths.TabFile(Container), TabRecord.Build("conteneur"));
+        fs.Add(paths.TabFile(Container), TabRecord.Build("container"));
         fs.Add(paths.TabFile(SourceA), TabRecord.Build("note"));
         var merger = new TabMerger(new TabStore(paths, fs), new FakeNotepadGuard(false, true));
 
@@ -109,7 +109,7 @@ public class TabMergerTests
     {
         var paths = new TabPaths(@"X:\LocalState");
         var fs = new FakeTabFileSystem();
-        var fileBacked = TabRecord.Build("un vrai fichier");
+        var fileBacked = TabRecord.Build("a real file");
         fileBacked[3] = 0x01;
         fs.Add(paths.TabFile(Container), fileBacked);
         fs.Add(paths.TabFile(SourceA), TabRecord.Build("note"));
@@ -126,13 +126,13 @@ public class TabMergerTests
     [Fact]
     public void Merge_RefusesEverythingWhenOneSourceIsUnreadable()
     {
-        // Le point crucial : une seule source douteuse annule TOUTE l'opération.
-        // Absorber à moitié laisserait des notes détruites sans contrepartie.
+        // The crucial point: a single doubtful source cancels the WHOLE
+        // operation. A partial absorb would destroy notes for nothing.
         var paths = new TabPaths(@"X:\LocalState");
         var fs = new FakeTabFileSystem();
-        fs.Add(paths.TabFile(Container), TabRecord.Build("conteneur"));
-        fs.Add(paths.TabFile(SourceA), TabRecord.Build("note saine"));
-        var corrupt = TabRecord.Build("note corrompue");
+        fs.Add(paths.TabFile(Container), TabRecord.Build("container"));
+        fs.Add(paths.TabFile(SourceA), TabRecord.Build("healthy note"));
+        var corrupt = TabRecord.Build("corrupted note");
         corrupt[^1] ^= 0xFF;
         fs.Add(paths.TabFile(SourceB), corrupt);
         var merger = new TabMerger(new TabStore(paths, fs), new FakeNotepadGuard(false, false));
@@ -149,11 +149,11 @@ public class TabMergerTests
     [Fact]
     public void Merge_RefusesUnknownFormatVariant()
     {
-        // Simule une mise à jour de Notepad qui change l'en-tête.
+        // Simulates a Notepad update changing the header.
         var paths = new TabPaths(@"X:\LocalState");
         var fs = new FakeTabFileSystem();
-        fs.Add(paths.TabFile(Container), TabRecord.Build("conteneur"));
-        var future = TabRecord.Build("note d'une version future");
+        fs.Add(paths.TabFile(Container), TabRecord.Build("container"));
+        var future = TabRecord.Build("note from a future version");
         future[4] = 0x02;
         fs.Add(paths.TabFile(SourceA), future);
         var merger = new TabMerger(new TabStore(paths, fs), new FakeNotepadGuard(false, false));
@@ -168,7 +168,7 @@ public class TabMergerTests
     [Fact]
     public void Merge_RefusesWhenNoSourceExists()
     {
-        var (merger, fs, _) = Build(tabs: [(Container, "conteneur")]);
+        var (merger, fs, _) = Build(tabs: [(Container, "container")]);
 
         var result = merger.Merge(Container, [SourceA], Separator);
 
@@ -180,9 +180,9 @@ public class TabMergerTests
     [Fact]
     public void Merge_IsIdempotentAcrossRepeatedRuns()
     {
-        // Deuxième passe sans nouvelle source : le conteneur ne doit pas
-        // enfler. C'est la garantie qui empêche la duplication à chaque cycle.
-        var (merger, fs, paths) = Build(tabs: [(Container, "conteneur"), (SourceA, "note")]);
+        // A second pass with no new source must not grow the container. This is
+        // what prevents duplication on every cycle.
+        var (merger, fs, paths) = Build(tabs: [(Container, "container"), (SourceA, "note")]);
         merger.Merge(Container, [SourceA], Separator);
         var afterFirst = TabRecord.Parse(Container, fs.ReadAllBytes(paths.TabFile(Container))).Text;
 
@@ -196,8 +196,8 @@ public class TabMergerTests
     [Fact]
     public void Merge_PreservesLongUnicodeContentAcrossVarintGrowth()
     {
-        // Le conteneur franchit la frontière des 16383 caractères : le varint
-        // de longueur passe de 2 à 3 octets et tout le bloc de texte se décale.
+        // The container crosses the 16383-character boundary: the length varint
+        // grows from two bytes to three and shifts the whole text block.
         var big = new string('é', 16_000);
         var (merger, fs, paths) = Build(tabs: [(Container, big), (SourceA, new string('à', 1_000))]);
 

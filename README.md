@@ -1,163 +1,184 @@
 # notepad-tidy
 
-Range automatiquement les onglets du Notepad de Windows 11.
+Automatically tidies the tabs of Windows 11 Notepad.
 
-Notepad garde tes notes sans que tu aies à les sauvegarder — c'est son
-meilleur atout, et c'est aussi pour ça qu'on finit avec cent onglets en
-vrac. `notepad-tidy` tourne en fond, attend que tu fermes Notepad, regroupe
-les notes par thème, et les fusionne dans quelques onglets — **qui restent
-des onglets non sauvegardés**. Tu relances Notepad, tu retrouves tes notes
-rangées, avec le même confort qu'avant.
+Notepad keeps your notes without ever asking you to save them — its best
+feature, and exactly why you end up with a hundred loose tabs. `notepad-tidy`
+runs in the background, waits until you close Notepad, groups notes by theme
+and merges them into a handful of tabs — **which remain unsaved tabs**. Reopen
+Notepad and your notes are tidy, with the same comfort as before.
 
-Pas de thèmes à déclarer. Ils se créent tout seuls.
+No categories to declare. You name a theme by writing it, once.
 
-## État du projet
+*Une version française de cette documentation est disponible :
+[README.fr.md](README.fr.md).*
 
-La rétro-ingénierie du format est **terminée et validée** sur un corpus réel
-de 106 onglets. La lecture, l'écriture et la fusion fonctionnent de bout en
-bout. La classification automatique reste à implémenter.
+## Project status
 
-| Composant | État |
+Reverse engineering of the on-disk format is **complete and validated**
+against a real corpus of 106 tabs. Reading, writing and merging work end to
+end. The background service is still to be written.
+
+| Component | Status |
 |---|---|
-| Parseur du format TabState | ✅ 100/100 onglets, zéro écart |
-| CRC32 (lecture + génération) | ✅ validé sur 106 fichiers |
-| Writer — Notepad accepte nos fichiers | ✅ vérifié en conditions réelles |
-| Fusion de notes | ✅ CLI fonctionnelle |
-| Watcher événementiel | ⬜ à faire |
-| Embeddings + clustering | ⬜ à faire |
-| Nommage automatique des thèmes | ⬜ à faire |
+| TabState format parser | ✅ 100/100 tabs, no mismatch |
+| CRC32 (read + generate) | ✅ validated on 106 files |
+| Writer — Notepad accepts our files | ✅ verified in real conditions |
+| Note merging | ✅ working CLI |
+| Theme discovery and filing | ✅ 80/82 notes filed on the reference corpus |
+| Event-driven watcher | ⬜ to do |
 
-## Pourquoi ce n'est pas un plugin
+## Why this is not a plugin
 
-Notepad 11 est une application Store en bac à sable. Aucune API d'extension,
-aucun point de greffe. La seule voie praticable est un outil externe qui
-manipule les fichiers d'état pendant que Notepad est fermé.
+Notepad 11 is a sandboxed Store application. No extension API, no hook. The
+only workable route is an external tool that manipulates the state files while
+Notepad is closed.
 
-Tout le format est documenté dans [`docs/FORMAT.md`](docs/FORMAT.md) — c'est
-le cœur du projet et le résultat le plus réutilisable.
+The whole format is documented in [`docs/FORMAT.md`](docs/FORMAT.md) — it is
+the core of the project and its most reusable result.
 
-## Démarrage
+## Getting started
 
-Prérequis : SDK .NET 10.
+Requires the .NET 10 SDK.
 
 ```bash
 dotnet build -c Release
 dotnet test
 ```
 
-39 tests, dont un tiers sur `TabMerger` — le seul code qui supprime des
-fichiers. Il travaille derrière un `ITabFileSystem`, donc ses tests tournent
-entièrement en mémoire, sans jamais approcher un vrai TabState.
+### Work on a copy, not on your real notes
 
-Ce qui est verrouillé, par ordre d'importance :
-
-- **Les refus.** Notepad qui tourne, Notepad qui revient au milieu de
-  l'opération, conteneur adossé à un fichier, source au CRC corrompu,
-  variante de format inconnue. Dans chaque cas on vérifie que **rien** n'a
-  été écrit ni supprimé.
-- **Le tout ou rien.** Une seule source douteuse annule l'opération entière :
-  absorber à moitié détruirait des notes sans contrepartie.
-- **L'idempotence.** Une deuxième passe ne fait pas enfler le conteneur.
-- **Les frontières de varint** (127/128, 16383/16384), où l'en-tête change de
-  taille et décale tout le bloc de texte.
-- Un vecteur binaire issu d'un onglet réel, comme détecteur de régression du
-  format.
-
-### Travailler sur une copie, pas sur tes vraies notes
-
-C'est le mode recommandé pour tout essai. `--path` fait travailler l'outil
-sur une copie isolée du TabState :
+This is the recommended mode for any experiment. `--path` makes the tool
+operate on an isolated copy of the TabState folder:
 
 ```bash
-nptidy backup C:\bac-a-sable          # duplique TabState et WindowState
-nptidy stats  --path C:\bac-a-sable
-nptidy merge  <cible> <src> --path C:\bac-a-sable --apply
+nptidy backup C:\sandbox            # copies TabState and WindowState
+nptidy stats  --path C:\sandbox
+nptidy merge  <target> <src> --path C:\sandbox --apply
 ```
 
-Notepad ne connaît que son propre dossier : il ne peut rien écraser dans le
-bac à sable, et rien de ce que tu y fais ne remonte vers tes vraies notes. Tu
-peux donc y travailler **pendant que Notepad est ouvert**.
+Notepad only knows its own folder: it cannot overwrite anything in the
+sandbox, and nothing you do there reaches your real notes. You can therefore
+work **while Notepad is open**.
 
-`--path` n'est pas une porte dérobée : si le chemin fourni désigne le vrai
-dossier de Notepad — quelles que soient la casse, un séparateur final ou un
-détour par `..` — les protections liées au processus restent actives. C'est
-testé.
+`--path` is not a back door: if the given path denotes Notepad's real folder —
+whatever the casing, a trailing separator or a `..` detour — the process
+guards stay active. That is covered by tests.
 
-### Commandes
+### Commands
 
 ```bash
-# état de santé du TabState — lecture seule
-nptidy stats
-
-# lister les onglets avec un aperçu
-nptidy list
-
-# afficher un onglet
-nptidy dump <guid>
-
-# sauvegarder avant de jouer
-nptidy backup C:\chemin\vers\sauvegarde
-
-# simuler une fusion (n'écrit rien)
-nptidy merge <cible> <source1> <source2>
-
-# appliquer pour de vrai
-nptidy merge <cible> <source1> --apply
+nptidy stats                        # health of the TabState folder
+nptidy analyze                      # measure the signals in your corpus
+nptidy themes                       # group notes by theme
+nptidy list                         # list tabs with a preview
+nptidy dump <guid>                  # content and header of one tab
+nptidy backup <folder>
+nptidy merge <target> <src...>      # dry run, writes nothing
+nptidy merge <target> <src> --apply
 ```
 
-Sortie typique de `stats` :
+## How filing works
+
+### 1. Explicit heading
+
+A note whose first line starts with `#` declares its theme.
 
 ```
-Onglets : 106
-  Ok               100   réécriture sûre
-  FileBacked         6   vrais fichiers — ne pas toucher
-Exploitables : 100 onglets, 171 093 caractères
+# project beta
+the link for the testers
 ```
 
-## Sécurité des données
+→ theme `project-beta`, created on the fly.
 
-Ces notes n'existent nulle part ailleurs — c'est tout le principe des
-onglets non sauvegardés. Le projet applique donc :
+This is the only mechanism that is both administration-free and **completely
+language-independent**: the category is not guessed, it is declared, in the
+user's own words. `# Rechnungen`, `# 仕事のメモ` and `# работа` behave
+identically.
 
-- **Sauvegarde avant toute écriture**, non désactivable.
-- **Refus par défaut** : magic inattendu, layout qui ne tombe pas juste au
-  octet près, ou CRC invalide → on ne touche pas au fichier.
-- **Simulation de première classe** : `merge` sans `--apply` n'ouvre aucun
-  fichier en écriture.
-- **Les onglets adossés à un vrai fichier ne sont jamais modifiés.**
-- **Abandon si Notepad tourne**, avant et pendant l'opération.
+The marker is required rather than inferred. Measured on a real corpus:
+guessing a heading from the shape of the first line yields 11% detections of
+which **every single one is a false positive** — colour codes, port numbers,
+schedules, passwords. One character removes the ambiguity entirely.
 
-Fais une copie de
+### 2. Filing by mention
+
+A note without a heading is filed into a theme the user **already declared
+elsewhere**. A new theme is never invented.
+
+It is deliberately conservative, because a wrong filing costs more than an
+unfiled note:
+
+- whole-token comparison, so `play` does not match inside `display`;
+- a multi-word theme only counts when all of its tokens appear in sequence;
+- themes shorter than four characters are ignored as mentions;
+- outright refusal when two themes are cited comparably, with a required
+  margin of 2×.
+
+### 3. No automatic theme creation
+
+Deliberately dropped. It invented names the user had not chosen, which was
+precisely the problem. `CorpusProfile` and `NoteSignals` remain as diagnostics
+behind `nptidy analyze`, not as the filing backbone.
+
+## Data safety
+
+These notes exist nowhere else — that is the whole point of unsaved tabs. So:
+
+- **Backup before any write**, not optional.
+- **Refuse by default**: unexpected magic, a layout that does not add up to
+  the byte, or an invalid CRC → the file is left alone.
+- **First-class dry run**: `merge` without `--apply` opens no file for writing.
+- **Tabs backed by a real file are never modified.**
+- **Abort if Notepad is running**, checked before and during the operation.
+
+Copy
 `%LOCALAPPDATA%\Packages\Microsoft.WindowsNotepad_8wekyb3d8bbwe\LocalState`
-avant tes premiers essais, et développe sur cette copie.
+before your first experiments, and develop against that copy.
 
-> ⚠️ Ne commite jamais de vraies notes dans ce dépôt. Elles contiennent
-> facilement des clés d'API, des brouillons de mails et des liens privés.
-> Le `.gitignore` bloque les `*.bin`, mais la vigilance reste manuelle.
+> ⚠️ Never commit real notes to this repository. They easily contain API keys,
+> draft e-mails and private links. The `.gitignore` blocks `*.bin`, but
+> vigilance stays manual.
+
+## Tests
+
+104 tests. About a third cover `TabMerger`, the only code that deletes files.
+It sits behind an `ITabFileSystem`, so its tests run entirely in memory and
+never approach a real TabState folder.
+
+What is pinned down, in order of importance:
+
+- **The refusals.** Notepad running, Notepad returning mid-operation, a
+  file-backed container, a source with a bad CRC, an unknown format variant.
+  In each case the tests assert that **nothing** was written or deleted.
+- **All or nothing.** A single doubtful source cancels the whole operation.
+- **Idempotence.** A second pass does not grow the container.
+- **Varint boundaries** (127/128, 16383/16384), where the header changes size
+  and shifts the whole text block.
+- **Language independence**: stop words and opening words are derived from
+  French, English and German corpora with the same code.
 
 ## Documentation
 
-| Fichier | Contenu |
+| File | Contents |
 |---|---|
-| [`docs/FORMAT.md`](docs/FORMAT.md) | Le format binaire, intégralement |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Design événementiel, idempotence, sécurité |
-| [`docs/CLASSIFICATION.md`](docs/CLASSIFICATION.md) | Thèmes auto-créés, zéro admin |
-| [`docs/FINDINGS.md`](docs/FINDINGS.md) | Journal des tests empiriques |
+| [`docs/FORMAT.md`](docs/FORMAT.md) | The binary format, in full |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Event-driven design, idempotence, data safety |
+| [`docs/CLASSIFICATION.md`](docs/CLASSIFICATION.md) | Filing, and why it does not depend on a language |
+| [`docs/FINDINGS.md`](docs/FINDINGS.md) | Log of the empirical experiments |
+
+French versions are kept alongside as `*.fr.md`.
 
 ## Performance
 
-L'outil est destiné à tourner en permanence, donc il ne doit rien coûter au
-repos. **Aucun polling** : on attend sur un handle noyau
-(`WaitForSingleObject` sur le processus Notepad), le thread dort à 0 % CPU
-et le noyau le réveille à la fermeture.
+The tool is meant to run permanently, so it must cost nothing at rest. **No
+polling**: it waits on a kernel handle (`WaitForSingleObject` on the Notepad
+process), the thread sleeps at 0% CPU and the kernel wakes it on exit.
 
 | Phase | RAM | CPU |
 |---|---|---|
-| Au repos | ~15 Mo | 0 % |
-| Rafale à la fermeture | ~150 Mo, 1-2 s | 1 cœur brièvement |
-
-Le modèle d'embedding n'est jamais résident : chargé en rafale, puis
-déchargé.
+| At rest | ~15 MB | 0% |
+| Burst on close | ~150 MB, 1–2 s | one core, briefly |
 
 ## Licence
 

@@ -4,26 +4,26 @@ using NotepadTidy.Core.IO;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-// --path permet de travailler sur une copie isolée plutôt que sur le vrai
-// dossier de Notepad. C'est le mode recommandé pour tout essai.
+// --path makes the tool work on an isolated copy instead of the real Notepad
+// folder. This is the recommended mode for any experiment.
 var pathOption = ReadOption(args, "--path");
 var paths = pathOption is null ? TabPaths.Default() : new TabPaths(pathOption);
 var store = new TabStore(paths, new WindowsTabFileSystem());
 
-// Sur un bac à sable, Notepad ne peut rien écraser : attendre sa fermeture
-// n'aurait aucun sens. Sur le vrai dossier, la protection est obligatoire.
+// In a sandbox Notepad cannot overwrite anything, so waiting for it to close
+// would be meaningless. On the real folder the guard is mandatory.
 INotepadGuard guard = paths.IsRealNotepadState
     ? new NotepadProcessGuard()
     : new SandboxGuard();
 
 if (!Directory.Exists(store.Paths.TabStateDir))
 {
-    Console.Error.WriteLine($"TabState introuvable : {store.Paths.TabStateDir}");
+    Console.Error.WriteLine($"TabState not found: {store.Paths.TabStateDir}");
     return 2;
 }
 
 if (!paths.IsRealNotepadState)
-    Console.WriteLine($"[bac à sable] {paths.LocalState}{Environment.NewLine}");
+    Console.WriteLine($"[sandbox] {paths.LocalState}{Environment.NewLine}");
 
 var command = args.Length > 0 && !args[0].StartsWith("--") ? args[0].ToLowerInvariant() : "stats";
 
@@ -38,24 +38,26 @@ switch (command)
     case "merge": return Merge(store, guard, args);
     default:
         Console.WriteLine("""
-            nptidy — outil de rangement des onglets Notepad
+            nptidy — tidy up your Notepad tabs
 
-              stats                       état de santé du TabState
-              list                        liste les onglets avec un aperçu
-              dump <guid>                 contenu et en-tête d'un onglet
-              backup <dossier>            copie de TabState et WindowState
-              merge <cible> <src...>      fusionne des notes
+              stats                       health of the TabState folder
+              analyze                     measure the signals in your corpus
+              themes                      group notes by theme
+              list                        list tabs with a preview
+              dump <guid>                 content and header of one tab
+              backup <folder>             copy TabState and WindowState
+              merge <target> <src...>     merge notes into a container tab
 
-            Options :
-              --path <dossier>            travailler sur une copie isolée
-                                          plutôt que sur le vrai Notepad
-              --apply                     appliquer réellement la fusion
+            Options:
+              --path <folder>             work on an isolated copy instead of
+                                          the real Notepad folder
+              --apply                     actually perform the merge
 
-            Sans --apply, merge n'écrit rien.
+            Without --apply, merge writes nothing.
 
-            Pour essayer sans risque :
-              nptidy backup C:\bac-a-sable
-              nptidy list --path C:\bac-a-sable
+            To try it safely:
+              nptidy backup C:\sandbox
+              nptidy list --path C:\sandbox
             """);
         return 1;
 }
@@ -72,8 +74,8 @@ static int Stats(TabStore store, INotepadGuard guard)
     var byStatus = records.GroupBy(r => r.Status).ToDictionary(g => g.Key, g => g.Count());
 
     Console.WriteLine($"TabState : {store.Paths.TabStateDir}");
-    Console.WriteLine($"Notepad tourne : {(guard.IsRunning ? "OUI (écriture interdite)" : "non")}");
-    Console.WriteLine($"Onglets : {records.Count}");
+    Console.WriteLine($"Notepad running : {(guard.IsRunning ? "YES (writing disabled)" : "no")}");
+    Console.WriteLine($"Tabs : {records.Count}");
     Console.WriteLine();
 
     foreach (var status in Enum.GetValues<TabStatus>())
@@ -81,11 +83,11 @@ static int Stats(TabStore store, INotepadGuard guard)
         if (!byStatus.TryGetValue(status, out int n)) continue;
         var note = status switch
         {
-            TabStatus.Ok => "réécriture sûre",
-            TabStatus.FileBacked => "vrais fichiers — ne pas toucher",
-            TabStatus.LayoutMismatch => "layout non vérifié — ignorés",
-            TabStatus.UnknownVariant => "variante inconnue — Notepad a peut-être changé",
-            TabStatus.BadCrc => "corrompus",
+            TabStatus.Ok => "safe to rewrite",
+            TabStatus.FileBacked => "real files — do not touch",
+            TabStatus.LayoutMismatch => "layout not verified — skipped",
+            TabStatus.UnknownVariant => "unknown variant — Notepad may have changed",
+            TabStatus.BadCrc => "corrupted",
             _ => "",
         };
         Console.WriteLine($"  {status,-16} {n,4}   {note}");
@@ -93,19 +95,19 @@ static int Stats(TabStore store, INotepadGuard guard)
 
     var safe = records.Where(r => r.IsSafeToRewrite).ToList();
     Console.WriteLine();
-    Console.WriteLine($"Exploitables : {safe.Count} onglets, {safe.Sum(r => r.Text.Length):N0} caractères");
+    Console.WriteLine($"Usable : {safe.Count} tabs, {safe.Sum(r => r.Text.Length):N0} characters");
     return 0;
 }
 
 /// <summary>
-/// Mesure les signaux exploitables du corpus, sans afficher aucun contenu.
-/// C'est l'outil de décision : il dit quels axes de classement ont de la
-/// matière avant d'écrire la moindre ligne de classifieur.
+/// Measures the usable signals in a corpus without printing any content.
+/// This is the decision tool: it says which filing strategies have material
+/// to work with, before a single line of classifier is written.
 /// </summary>
 static int Analyze(TabStore store)
 {
     var notes = store.ReadAll().Where(r => r.IsSafeToRewrite).Select(r => r.Text).ToList();
-    if (notes.Count == 0) { Console.Error.WriteLine("aucune note exploitable"); return 2; }
+    if (notes.Count == 0) { Console.Error.WriteLine("no usable note"); return 2; }
 
     int drafts = notes.Count(NoteSignals.LooksLikeMessageDraft);
     int epistolary = notes.Count(NoteSignals.HasEpistolaryMarker);
@@ -113,57 +115,57 @@ static int Analyze(TabStore store)
     int withUrl = notes.Count(n => NoteSignals.UrlCount(n) > 0);
     int linkDumps = notes.Count(NoteSignals.IsMostlyLinks);
 
-    Console.WriteLine($"Notes analysées : {notes.Count}");
+    Console.WriteLine($"Notes analysed : {notes.Count}");
     Console.WriteLine();
-    Console.WriteLine("— Type détectable sans modèle —");
-    Console.WriteLine($"  brouillon de message (salutation en tête)  {drafts,4}  {Pct(drafts, notes.Count)}");
-    Console.WriteLine($"  registre épistolaire (politesse, @)        {epistolary,4}  {Pct(epistolary, notes.Count)}");
-    Console.WriteLine($"  marqueurs techniques                       {technical,4}  {Pct(technical, notes.Count)}");
-    Console.WriteLine($"  contient au moins une URL                  {withUrl,4}  {Pct(withUrl, notes.Count)}");
-    Console.WriteLine($"  presque uniquement des liens               {linkDumps,4}  {Pct(linkDumps, notes.Count)}");
+    Console.WriteLine("— Type detectable without a model —");
+    Console.WriteLine($"  message draft (opening greeting)      {drafts,4}  {Pct(drafts, notes.Count)}");
+    Console.WriteLine($"  correspondence register (politeness)  {epistolary,4}  {Pct(epistolary, notes.Count)}");
+    Console.WriteLine($"  technical markers                     {technical,4}  {Pct(technical, notes.Count)}");
+    Console.WriteLine($"  contains at least one URL             {withUrl,4}  {Pct(withUrl, notes.Count)}");
+    Console.WriteLine($"  almost entirely links                 {linkDumps,4}  {Pct(linkDumps, notes.Count)}");
 
-    // Combien de notes déclarent déjà leur thème en première ligne ? C'est le
-    // seul mécanisme de classement indépendant de la langue.
+    // How many notes already declare their theme on the first line? This is
+    // the only language-independent filing mechanism.
     var explicitly = notes.Select(NoteHeading.ExtractExplicit).Where(h => h is not null).ToList();
     var guessed = notes.Select(NoteHeading.GuessImplicit).Where(h => h is not null).ToList();
     Console.WriteLine();
-    Console.WriteLine("— Titre en première ligne —");
-    Console.WriteLine($"  titre explicite (# en tête)                {explicitly.Count,4}  {Pct(explicitly.Count, notes.Count)}");
-    Console.WriteLine($"  première ligne DEVINÉE comme titre         {guessed.Count,4}  {Pct(guessed.Count, notes.Count)}");
+    Console.WriteLine("— Heading on the first line —");
+    Console.WriteLine($"  explicit heading (leading #)          {explicitly.Count,4}  {Pct(explicitly.Count, notes.Count)}");
+    Console.WriteLine($"  first line GUESSED as a heading       {guessed.Count,4}  {Pct(guessed.Count, notes.Count)}");
     if (guessed.Count > 0)
     {
-        Console.WriteLine("  ce que la devinette proposerait comme thèmes :");
+        Console.WriteLine("  what guessing would propose as themes:");
         foreach (var h in guessed.Select(h => NoteHeading.Normalize(h!))
                                  .Where(h => h.Length > 0)
                                  .Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
             Console.WriteLine($"    {h}");
-        Console.WriteLine("  (à inspecter : la devinette produit surtout des faux positifs)");
+        Console.WriteLine("  (inspect these: guessing yields mostly false positives)");
     }
 
     var lengths = notes.Select(n => n.Length).OrderBy(x => x).ToList();
     Console.WriteLine();
-    Console.WriteLine("— Longueurs —");
-    Console.WriteLine($"  médiane {lengths[lengths.Count / 2]}  moyenne {lengths.Average():N0}  max {lengths[^1]}");
-    Console.WriteLine($"  notes de moins de 80 caractères : {lengths.Count(l => l < 80)}  (peu de signal sémantique)");
+    Console.WriteLine("— Lengths —");
+    Console.WriteLine($"  median {lengths[lengths.Count / 2]}  mean {lengths.Average():N0}  max {lengths[^1]}");
+    Console.WriteLine($"  notes under 80 characters : {lengths.Count(l => l < 80)}  (little semantic signal)");
 
-    // Rien de ce qui suit n'utilise de liste codée en dur : tout est dérivé du
-    // corpus, donc transposable à un autre utilisateur et à une autre langue.
+    // Nothing below uses a hardcoded list: everything is derived from the
+    // corpus, so it transfers to another user and another language.
     var profile = new CorpusProfile(notes);
 
     Console.WriteLine();
-    Console.WriteLine($"— Mots vides DÉDUITS du corpus ({profile.StopWords.Count}) —");
+    Console.WriteLine($"— Stop words DERIVED from the corpus ({profile.StopWords.Count}) —");
     Console.WriteLine("  " + string.Join(", ", profile.StopWords
         .OrderByDescending(profile.DocumentFrequency).Take(14)));
 
     Console.WriteLine();
-    Console.WriteLine($"— Mots d'ouverture DÉDUITS ({profile.OpeningWords.Count}) —");
+    Console.WriteLine($"— Opening words DERIVED ({profile.OpeningWords.Count}) —");
     Console.WriteLine("  " + (profile.OpeningWords.Count > 0
         ? string.Join(", ", profile.OpeningWords.OrderByDescending(profile.DocumentFrequency))
-        : "aucun"));
-    Console.WriteLine($"  notes s'ouvrant ainsi : {notes.Count(profile.OpensLikeCorrespondence)}");
+        : "none"));
+    Console.WriteLine($"  notes opening that way : {notes.Count(profile.OpensLikeCorrespondence)}");
 
     Console.WriteLine();
-    Console.WriteLine("— Mots les plus discriminants, par TF-IDF —");
+    Console.WriteLine("— Most distinctive words, by TF-IDF —");
     var best = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
     foreach (var note in notes)
         foreach (var (token, score) in profile.DistinctiveTokens(note, 6))
@@ -171,19 +173,17 @@ static int Analyze(TabStore store)
     foreach (var (token, score) in best.OrderByDescending(k => k.Value).Take(20))
         Console.WriteLine($"  {token,-24} {score,6:N1}   ({profile.DocumentFrequency(token)} notes)");
 
-    // Noms propres : un mot capitalisé en milieu de phrase n'est pas un nom
-    // commun français. C'est le filtre qui sépare les projets du vocabulaire.
     var proper = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     foreach (var note in notes)
         foreach (var p in NoteSignals.ProperNouns(note).Distinct(StringComparer.OrdinalIgnoreCase))
             proper[p] = proper.GetValueOrDefault(p) + 1;
 
     Console.WriteLine();
-    Console.WriteLine("— Noms propres récurrents (candidats projet / interlocuteur) —");
+    Console.WriteLine("— Recurring proper nouns (project / person candidates) —");
     foreach (var (token, count) in proper.Where(k => k.Value >= 2)
                                          .OrderByDescending(k => k.Value).Take(25))
         Console.WriteLine($"  {token,-24} {count,3} notes");
-    Console.WriteLine($"  ... {proper.Count(k => k.Value == 1)} noms propres n'apparaissent que dans 1 note");
+    Console.WriteLine($"  ... {proper.Count(k => k.Value == 1)} proper nouns appear in a single note");
 
     var domains = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     foreach (var note in notes)
@@ -193,7 +193,7 @@ static int Analyze(TabStore store)
     if (domains.Count > 0)
     {
         Console.WriteLine();
-        Console.WriteLine("— Domaines cités —");
+        Console.WriteLine("— Domains mentioned —");
         foreach (var (d, c) in domains.OrderByDescending(k => k.Value).Take(12))
             Console.WriteLine($"  {d,-32} {c,3} notes");
     }
@@ -204,8 +204,8 @@ static int Analyze(TabStore store)
 }
 
 /// <summary>
-/// Groups notes by explicit heading. Grouping is insensitive to
-/// case: "#Project" and "#project" denote the same theme.
+/// Groups notes by explicit heading. Grouping is insensitive to case:
+/// "#Project" and "#project" denote the same theme.
 /// </summary>
 static int Themes(TabStore store)
 {
@@ -217,16 +217,14 @@ static int Themes(TabStore store)
 
     var groups = new Dictionary<string, List<Guid>>(StringComparer.OrdinalIgnoreCase);
     var untitled = new List<Guid>();
-
     var byMention = new List<(Guid Id, string Theme, string Why)>();
 
     foreach (var record in records)
     {
         var theme = ThemeVocabulary.Match(record.Text, vocabulary);
 
-        // Pas de titre : on cherche un thème DÉJÀ déclaré dans le corps. On
-        // n'en invente jamais un nouveau — le vocabulaire reste celui de
-        // l'utilisateur.
+        // No heading: look for a theme the user ALREADY declared elsewhere.
+        // A new one is never invented — the vocabulary stays theirs.
         if (theme is null)
         {
             var mention = ThemeMention.FindInBody(record.Text, vocabulary);
@@ -240,30 +238,31 @@ static int Themes(TabStore store)
     }
 
     int titled = records.Count - untitled.Count - byMention.Count;
-    Console.WriteLine($"Notes exploitables : {records.Count}");
-    Console.WriteLine($"  titre « # » explicite     : {titled}");
-    Console.WriteLine($"  rattachées par mention    : {byMention.Count}");
-    Console.WriteLine($"  non classées              : {untitled.Count}");
+    Console.WriteLine($"Usable notes : {records.Count}");
+    Console.WriteLine($"  explicit # heading   : {titled}");
+    Console.WriteLine($"  filed by mention     : {byMention.Count}");
+    Console.WriteLine($"  unfiled              : {untitled.Count}");
     if (byMention.Count > 0)
     {
         Console.WriteLine();
-        Console.WriteLine("— Rattachements par mention dans le corps —");
+        Console.WriteLine("— Filed by mention in the body —");
         foreach (var (id, theme, why) in byMention)
             Console.WriteLine($"  {id.ToString()[..8]}  → {theme,-16} ({why})");
     }
+
     Console.WriteLine();
-    Console.WriteLine($"— {groups.Count} thèmes —");
+    Console.WriteLine($"— {groups.Count} themes —");
     foreach (var (theme, ids) in groups.OrderByDescending(g => g.Value.Count).ThenBy(g => g.Key))
         Console.WriteLine($"  {theme,-28} {ids.Count,3} note{(ids.Count > 1 ? "s" : "")}");
 
     if (untitled.Count > 0)
     {
         Console.WriteLine();
-        Console.WriteLine("— Notes sans titre exploitable (aperçu de la 1re ligne) —");
+        Console.WriteLine("— Unfiled notes (first-line preview) —");
         foreach (var id in untitled.Take(20))
         {
             var text = records.First(r => r.Id == id).Text;
-            var first = text.Split('\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim() ?? "";
+            var first = text.Split('\r', '\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim() ?? "";
             if (first.Length > 52) first = first[..52] + "…";
             Console.WriteLine($"  {id.ToString()[..8]}  {first}");
         }
@@ -286,22 +285,22 @@ static int Dump(TabStore store, string[] args)
 {
     if (args.Length < 2 || !Guid.TryParse(args[1], out var id))
     {
-        Console.Error.WriteLine("usage : nptidy dump <guid>");
+        Console.Error.WriteLine("usage: nptidy dump <guid>");
         return 1;
     }
     if (!store.FileSystem.FileExists(store.Paths.TabFile(id)))
     {
-        Console.Error.WriteLine($"introuvable : {store.Paths.TabFile(id)}");
+        Console.Error.WriteLine($"not found: {store.Paths.TabFile(id)}");
         return 2;
     }
 
     var record = store.Read(id);
     Console.WriteLine($"GUID       {record.Id}");
-    Console.WriteLine($"Statut     {record.Status}");
-    Console.WriteLine($"Taille     {record.FileLength} octets");
-    Console.WriteLine($"Longueur   {record.DeclaredLength} caractères");
-    Console.WriteLine($"Texte @    offset {record.TextOffset}");
-    Console.WriteLine($"Curseur    {record.CursorStart}/{record.CursorEnd}");
+    Console.WriteLine($"Status     {record.Status}");
+    Console.WriteLine($"Size       {record.FileLength} bytes");
+    Console.WriteLine($"Length     {record.DeclaredLength} characters");
+    Console.WriteLine($"Text at    offset {record.TextOffset}");
+    Console.WriteLine($"Caret      {record.CursorStart}/{record.CursorEnd}");
     Console.WriteLine(new string('-', 60));
     Console.WriteLine(record.Text);
     Console.WriteLine(new string('-', 60));
@@ -310,33 +309,33 @@ static int Dump(TabStore store, string[] args)
 
 static int Backup(TabStore store, string[] args)
 {
-    if (args.Length < 2) { Console.Error.WriteLine("usage : nptidy backup <dossier>"); return 1; }
-    Console.WriteLine($"{store.Backup(args[1])} fichiers copiés vers {args[1]}");
+    if (args.Length < 2) { Console.Error.WriteLine("usage: nptidy backup <folder>"); return 1; }
+    Console.WriteLine($"{store.Backup(args[1])} files copied to {args[1]}");
     return 0;
 }
 
 static int Merge(TabStore store, INotepadGuard guard, string[] args)
 {
     bool apply = args.Contains("--apply");
-    // On ne garde que les GUID : les options et leurs valeurs sont écartées.
+    // Only GUIDs are kept: options and their values are discarded.
     var ids = args.Skip(1)
                   .Select(a => Guid.TryParse(a, out var g) ? g : Guid.Empty)
                   .Where(g => g != Guid.Empty).ToList();
 
     if (ids.Count < 2)
     {
-        Console.Error.WriteLine("usage : nptidy merge <cible> <source...> [--apply]");
+        Console.Error.WriteLine("usage: nptidy merge <target> <source...> [--apply]");
         return 1;
     }
 
     var container = ids[0];
     var sources = ids.Skip(1).ToList();
-    var separator = $"{Environment.NewLine}{Environment.NewLine}--- fusionné le {DateTime.Now:yyyy-MM-dd} ---{Environment.NewLine}";
+    var separator = $"{Environment.NewLine}{Environment.NewLine}--- merged on {DateTime.Now:yyyy-MM-dd} ---{Environment.NewLine}";
 
     if (!apply)
     {
         var target = store.Read(container);
-        Console.WriteLine($"[simulation] conteneur {container} — {target.Status}, {target.Text.Length} caractères");
+        Console.WriteLine($"[dry run] container {container} — {target.Status}, {target.Text.Length} characters");
         int total = target.Text.Length;
         foreach (var id in sources)
         {
@@ -344,18 +343,18 @@ static int Merge(TabStore store, INotepadGuard guard, string[] args)
             Console.WriteLine($"  + {id}  {r.Text.Length,6}c  {r.Status}");
             total += r.Text.Length + separator.Length;
         }
-        Console.WriteLine($"  résultat : {total} caractères, {sources.Count} notes absorbées");
-        Console.WriteLine("Rien n'a été écrit. Ajouter --apply pour appliquer.");
+        Console.WriteLine($"  result : {total} characters, {sources.Count} notes absorbed");
+        Console.WriteLine("Nothing was written. Add --apply to perform the merge.");
         return 0;
     }
 
     var result = new TabMerger(store, guard).Merge(container, sources, separator);
     if (!result.Ok)
     {
-        Console.Error.WriteLine($"refusé ({result.Refusal}) : {result.Message}");
+        Console.Error.WriteLine($"refused ({result.Refusal}): {result.Message}");
         return 3;
     }
 
-    Console.WriteLine($"Fusionné : {result.Absorbed} notes, {result.Chars} caractères, {result.Bytes} octets");
+    Console.WriteLine($"Merged : {result.Absorbed} notes, {result.Chars} characters, {result.Bytes} bytes");
     return 0;
 }
