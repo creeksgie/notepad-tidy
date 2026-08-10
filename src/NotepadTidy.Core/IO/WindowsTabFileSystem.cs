@@ -33,3 +33,16 @@ public sealed class NotepadProcessGuard : INotepadGuard
 {
     public bool IsRunning => Process.GetProcessesByName("Notepad").Length > 0;
 }
+
+/// <summary>
+/// Garde neutre, pour travailler sur une copie isolée du TabState. Notepad ne
+/// connaît que son propre dossier : sur un bac à sable, il ne peut rien
+/// écraser, donc l'attendre n'aurait aucun sens.
+///
+/// À n'utiliser que sur un chemin dont on a vérifié qu'il n'est PAS le
+/// LocalState réel — voir <see cref="TabPaths.IsRealNotepadState"/>.
+/// </summary>
+public sealed class SandboxGuard : INotepadGuard
+{
+    public bool IsRunning => false;
+}

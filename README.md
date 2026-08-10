@@ -45,7 +45,7 @@ dotnet build -c Release
 dotnet test
 ```
 
-29 tests, dont la moitié sur `TabMerger` — le seul code qui supprime des
+39 tests, dont un tiers sur `TabMerger` — le seul code qui supprime des
 fichiers. Il travaille derrière un `ITabFileSystem`, donc ses tests tournent
 entièrement en mémoire, sans jamais approcher un vrai TabState.
 
@@ -62,6 +62,28 @@ Ce qui est verrouillé, par ordre d'importance :
   taille et décale tout le bloc de texte.
 - Un vecteur binaire issu d'un onglet réel, comme détecteur de régression du
   format.
+
+### Travailler sur une copie, pas sur tes vraies notes
+
+C'est le mode recommandé pour tout essai. `--path` fait travailler l'outil
+sur une copie isolée du TabState :
+
+```bash
+nptidy backup C:\bac-a-sable          # duplique TabState et WindowState
+nptidy stats  --path C:\bac-a-sable
+nptidy merge  <cible> <src> --path C:\bac-a-sable --apply
+```
+
+Notepad ne connaît que son propre dossier : il ne peut rien écraser dans le
+bac à sable, et rien de ce que tu y fais ne remonte vers tes vraies notes. Tu
+peux donc y travailler **pendant que Notepad est ouvert**.
+
+`--path` n'est pas une porte dérobée : si le chemin fourni désigne le vrai
+dossier de Notepad — quelles que soient la casse, un séparateur final ou un
+détour par `..` — les protections liées au processus restent actives. C'est
+testé.
+
+### Commandes
 
 ```bash
 # état de santé du TabState — lecture seule

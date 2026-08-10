@@ -15,6 +15,16 @@ public sealed class TabPaths(string localState)
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Packages", "Microsoft.WindowsNotepad_8wekyb3d8bbwe", "LocalState"));
 
+    /// <summary>
+    /// Vrai si ce chemin est le vrai dossier de Notepad. Sert à décider si les
+    /// protections liées au processus s'appliquent : sur un bac à sable, elles
+    /// n'ont pas lieu d'être ; sur le vrai dossier, elles sont obligatoires.
+    /// </summary>
+    public bool IsRealNotepadState => string.Equals(
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(LocalState)),
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(Default().LocalState)),
+        StringComparison.OrdinalIgnoreCase);
+
     public string TabFile(Guid id) => Path.Combine(TabStateDir, $"{id}.bin");
 
     /// <summary>

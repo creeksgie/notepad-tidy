@@ -4,8 +4,17 @@ using NotepadTidy.Core.IO;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-var store = TabStore.Default();
-var guard = new NotepadProcessGuard();
+// --path permet de travailler sur une copie isolée plutôt que sur le vrai
+// dossier de Notepad. C'est le mode recommandé pour tout essai.
+var pathOption = ReadOption(args, "--path");
+var paths = pathOption is null ? TabPaths.Default() : new TabPaths(pathOption);
+var store = new TabStore(paths, new WindowsTabFileSystem());
+
+// Sur un bac à sable, Notepad ne peut rien écraser : attendre sa fermeture
+// n'aurait aucun sens. Sur le vrai dossier, la protection est obligatoire.
+INotepadGuard guard = paths.IsRealNotepadState
+    ? new NotepadProcessGuard()
+    : new SandboxGuard();
 
 if (!Directory.Exists(store.Paths.TabStateDir))
 {
@@ -13,7 +22,10 @@ if (!Directory.Exists(store.Paths.TabStateDir))
     return 2;
 }
 
-var command = args.Length > 0 ? args[0].ToLowerInvariant() : "stats";
+if (!paths.IsRealNotepadState)
+    Console.WriteLine($"[bac à sable] {paths.LocalState}{Environment.NewLine}");
+
+var command = args.Length > 0 && !args[0].StartsWith("--") ? args[0].ToLowerInvariant() : "stats";
 
 switch (command)
 {
@@ -21,7 +33,7 @@ switch (command)
     case "list": return List(store);
     case "dump": return Dump(store, args);
     case "backup": return Backup(store, args);
-    case "merge": return Merge(store, args);
+    case "merge": return Merge(store, guard, args);
     default:
         Console.WriteLine("""
             nptidy — outil de rangement des onglets Notepad
@@ -32,9 +44,24 @@ switch (command)
               backup <dossier>            copie de TabState et WindowState
               merge <cible> <src...>      fusionne des notes
 
-            merge n'écrit rien sans --apply.
+            Options :
+              --path <dossier>            travailler sur une copie isolée
+                                          plutôt que sur le vrai Notepad
+              --apply                     appliquer réellement la fusion
+
+            Sans --apply, merge n'écrit rien.
+
+            Pour essayer sans risque :
+              nptidy backup C:\bac-a-sable
+              nptidy list --path C:\bac-a-sable
             """);
         return 1;
+}
+
+static string? ReadOption(string[] args, string name)
+{
+    int i = Array.IndexOf(args, name);
+    return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 }
 
 static int Stats(TabStore store, INotepadGuard guard)
@@ -112,10 +139,11 @@ static int Backup(TabStore store, string[] args)
     return 0;
 }
 
-static int Merge(TabStore store, string[] args)
+static int Merge(TabStore store, INotepadGuard guard, string[] args)
 {
     bool apply = args.Contains("--apply");
-    var ids = args.Skip(1).Where(a => !a.StartsWith("--"))
+    // On ne garde que les GUID : les options et leurs valeurs sont écartées.
+    var ids = args.Skip(1)
                   .Select(a => Guid.TryParse(a, out var g) ? g : Guid.Empty)
                   .Where(g => g != Guid.Empty).ToList();
 
@@ -145,7 +173,7 @@ static int Merge(TabStore store, string[] args)
         return 0;
     }
 
-    var result = TabMerger.Default().Merge(container, sources, separator);
+    var result = new TabMerger(store, guard).Merge(container, sources, separator);
     if (!result.Ok)
     {
         Console.Error.WriteLine($"refusé ({result.Refusal}) : {result.Message}");
