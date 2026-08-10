@@ -42,6 +42,24 @@ Start-ScheduledTask -TaskName NotepadTidy
 No administrator rights are needed: the service only ever touches the current
 user's own Notepad folder.
 
+## No console window
+
+The service is built as `WinExe`, not `Exe`. A console application makes
+Windows allocate a terminal, and closing that terminal kills the process — so
+the tool would only work for as long as a black window stayed open on screen.
+`WinExe` allocates nothing.
+
+Verify it on the produced binary: the PE subsystem must be `2` (windows) for
+`nptidyd.exe`, and `3` (console) for `nptidy.exe`, which is interactive and
+should keep its output.
+
+```powershell
+$b = [IO.File]::ReadAllBytes("$env:LOCALAPPDATA\notepad-tidy\bin\nptidyd.exe")
+[BitConverter]::ToUInt16($b, [BitConverter]::ToInt32($b, 0x3C) + 0x5C)   # 2
+```
+
+The service logs to `%LOCALAPPDATA%\notepad-tidy\service.log` instead.
+
 ## Checking on it
 
 ```powershell
