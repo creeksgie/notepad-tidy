@@ -30,6 +30,7 @@ var command = args.Length > 0 && !args[0].StartsWith("--") ? args[0].ToLowerInva
 switch (command)
 {
     case "stats": return Stats(store, guard);
+    case "analyze": return Analyze(store);
     case "list": return List(store);
     case "dump": return Dump(store, args);
     case "backup": return Backup(store, args);
@@ -93,6 +94,112 @@ static int Stats(TabStore store, INotepadGuard guard)
     Console.WriteLine();
     Console.WriteLine($"Exploitables : {safe.Count} onglets, {safe.Sum(r => r.Text.Length):N0} caractères");
     return 0;
+}
+
+/// <summary>
+/// Mesure les signaux exploitables du corpus, sans afficher aucun contenu.
+/// C'est l'outil de décision : il dit quels axes de classement ont de la
+/// matière avant d'écrire la moindre ligne de classifieur.
+/// </summary>
+static int Analyze(TabStore store)
+{
+    var notes = store.ReadAll().Where(r => r.IsSafeToRewrite).Select(r => r.Text).ToList();
+    if (notes.Count == 0) { Console.Error.WriteLine("aucune note exploitable"); return 2; }
+
+    int drafts = notes.Count(NoteSignals.LooksLikeMessageDraft);
+    int epistolary = notes.Count(NoteSignals.HasEpistolaryMarker);
+    int technical = notes.Count(NoteSignals.HasTechnicalMarker);
+    int withUrl = notes.Count(n => NoteSignals.UrlCount(n) > 0);
+    int linkDumps = notes.Count(NoteSignals.IsMostlyLinks);
+
+    Console.WriteLine($"Notes analysées : {notes.Count}");
+    Console.WriteLine();
+    Console.WriteLine("— Type détectable sans modèle —");
+    Console.WriteLine($"  brouillon de message (salutation en tête)  {drafts,4}  {Pct(drafts, notes.Count)}");
+    Console.WriteLine($"  registre épistolaire (politesse, @)        {epistolary,4}  {Pct(epistolary, notes.Count)}");
+    Console.WriteLine($"  marqueurs techniques                       {technical,4}  {Pct(technical, notes.Count)}");
+    Console.WriteLine($"  contient au moins une URL                  {withUrl,4}  {Pct(withUrl, notes.Count)}");
+    Console.WriteLine($"  presque uniquement des liens               {linkDumps,4}  {Pct(linkDumps, notes.Count)}");
+
+    // Combien de notes déclarent déjà leur thème en première ligne ? C'est le
+    // seul mécanisme de classement indépendant de la langue.
+    var explicitly = notes.Select(NoteHeading.ExtractExplicit).Where(h => h is not null).ToList();
+    var guessed = notes.Select(NoteHeading.GuessImplicit).Where(h => h is not null).ToList();
+    Console.WriteLine();
+    Console.WriteLine("— Titre en première ligne —");
+    Console.WriteLine($"  titre explicite (# en tête)                {explicitly.Count,4}  {Pct(explicitly.Count, notes.Count)}");
+    Console.WriteLine($"  première ligne DEVINÉE comme titre         {guessed.Count,4}  {Pct(guessed.Count, notes.Count)}");
+    if (guessed.Count > 0)
+    {
+        Console.WriteLine("  ce que la devinette proposerait comme thèmes :");
+        foreach (var h in guessed.Select(h => NoteHeading.Normalize(h!))
+                                 .Where(h => h.Length > 0)
+                                 .Distinct(StringComparer.OrdinalIgnoreCase).Take(8))
+            Console.WriteLine($"    {h}");
+        Console.WriteLine("  (à inspecter : la devinette produit surtout des faux positifs)");
+    }
+
+    var lengths = notes.Select(n => n.Length).OrderBy(x => x).ToList();
+    Console.WriteLine();
+    Console.WriteLine("— Longueurs —");
+    Console.WriteLine($"  médiane {lengths[lengths.Count / 2]}  moyenne {lengths.Average():N0}  max {lengths[^1]}");
+    Console.WriteLine($"  notes de moins de 80 caractères : {lengths.Count(l => l < 80)}  (peu de signal sémantique)");
+
+    // Rien de ce qui suit n'utilise de liste codée en dur : tout est dérivé du
+    // corpus, donc transposable à un autre utilisateur et à une autre langue.
+    var profile = new CorpusProfile(notes);
+
+    Console.WriteLine();
+    Console.WriteLine($"— Mots vides DÉDUITS du corpus ({profile.StopWords.Count}) —");
+    Console.WriteLine("  " + string.Join(", ", profile.StopWords
+        .OrderByDescending(profile.DocumentFrequency).Take(14)));
+
+    Console.WriteLine();
+    Console.WriteLine($"— Mots d'ouverture DÉDUITS ({profile.OpeningWords.Count}) —");
+    Console.WriteLine("  " + (profile.OpeningWords.Count > 0
+        ? string.Join(", ", profile.OpeningWords.OrderByDescending(profile.DocumentFrequency))
+        : "aucun"));
+    Console.WriteLine($"  notes s'ouvrant ainsi : {notes.Count(profile.OpensLikeCorrespondence)}");
+
+    Console.WriteLine();
+    Console.WriteLine("— Mots les plus discriminants, par TF-IDF —");
+    var best = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+    foreach (var note in notes)
+        foreach (var (token, score) in profile.DistinctiveTokens(note, 6))
+            if (score > best.GetValueOrDefault(token)) best[token] = score;
+    foreach (var (token, score) in best.OrderByDescending(k => k.Value).Take(20))
+        Console.WriteLine($"  {token,-24} {score,6:N1}   ({profile.DocumentFrequency(token)} notes)");
+
+    // Noms propres : un mot capitalisé en milieu de phrase n'est pas un nom
+    // commun français. C'est le filtre qui sépare les projets du vocabulaire.
+    var proper = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var note in notes)
+        foreach (var p in NoteSignals.ProperNouns(note).Distinct(StringComparer.OrdinalIgnoreCase))
+            proper[p] = proper.GetValueOrDefault(p) + 1;
+
+    Console.WriteLine();
+    Console.WriteLine("— Noms propres récurrents (candidats projet / interlocuteur) —");
+    foreach (var (token, count) in proper.Where(k => k.Value >= 2)
+                                         .OrderByDescending(k => k.Value).Take(25))
+        Console.WriteLine($"  {token,-24} {count,3} notes");
+    Console.WriteLine($"  ... {proper.Count(k => k.Value == 1)} noms propres n'apparaissent que dans 1 note");
+
+    var domains = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    foreach (var note in notes)
+        foreach (var d in NoteSignals.Domains(note).Distinct(StringComparer.OrdinalIgnoreCase))
+            domains[d] = domains.GetValueOrDefault(d) + 1;
+
+    if (domains.Count > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine("— Domaines cités —");
+        foreach (var (d, c) in domains.OrderByDescending(k => k.Value).Take(12))
+            Console.WriteLine($"  {d,-32} {c,3} notes");
+    }
+
+    return 0;
+
+    static string Pct(int n, int total) => $"({100.0 * n / total,5:N1} %)";
 }
 
 static int List(TabStore store)

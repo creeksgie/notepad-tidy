@@ -1,127 +1,134 @@
-# Thèmes auto-créés, zéro administration
+# Classement des notes — zéro admin, zéro coût, zéro dépendance à la langue
 
-Réponse courte : **oui, c'est faisable**, et c'est même le mode de
-fonctionnement naturel. Tu ne déclares jamais de thème. Ils émergent des
-notes, se nomment tout seuls, et de nouveaux apparaissent quand tu commences
-à parler d'autre chose.
+Ce document a été réécrit après mesure sur un corpus réel de 99 notes. Les
+chiffres qu'il cite viennent de `nptidy analyze`, pas d'une intuition.
 
-## Le principe
+## La contrainte qui a tout décidé
 
-On ne classe pas dans des catégories prédéfinies. On mesure la **proximité
-sémantique** entre notes, on laisse les paquets se former, et on nomme
-chaque paquet d'après ce qu'il contient.
+Un outil qui ne marche que sur des notes françaises ne vaut rien pour
+quelqu'un d'autre. Or la première approche tentée — listes de salutations, de
+mots vides, de jours de la semaine — était du sur-mesure pour un seul
+utilisateur. Pire, l'heuristique « un mot capitalisé en milieu de phrase est
+un nom propre » s'effondre en allemand, où tous les noms communs sont
+capitalisés, et n'a aucun sens en japonais.
 
-```
-note → embedding (vecteur de 384 dims) → clustering → thème → nom auto
-```
+Tout ce qui suit est donc classé selon un seul critère : **est-ce que ça
+marche chez quelqu'un d'autre, dans une autre langue ?**
 
-## Les deux régimes
+## Niveau 1 — le titre explicite (mécanisme principal)
 
-### Démarrage à froid — une seule fois
-
-Tes ~100 notes existantes n'ont aucune structure. On les embedde toutes, on
-lance un clustering global, et on obtient N thèmes d'un coup.
-
-Algorithme : **HDBSCAN**, ou clustering agglomératif avec seuil de distance.
-L'avantage de HDBSCAN ici est qu'il ne demande pas de fixer N à l'avance —
-il le découvre — et qu'il sait dire « cette note ne ressemble à rien »
-plutôt que de la forcer dans un paquet.
-
-Ces orphelines vont dans un thème `Divers` qui sert de purgatoire : dès que
-2 ou 3 notes s'y ressemblent, elles s'en détachent en thème propre.
-
-### Régime permanent — à chaque fermeture
-
-Tu fermes Notepad avec 1 à 3 notes nouvelles. Pas de reclustering complet :
+Une note dont la première ligne commence par `#` déclare son thème.
 
 ```
-pour chaque note nouvelle :
-    v = embedding(note)
-    sim, thème = plus proche centroïde de thème
-    si sim > SEUIL_RATTACHEMENT (~0.55) :
-        append dans ce thème, mise à jour du centroïde
-    sinon :
-        garder de côté
-si ≥ 3 notes gardées de côté se ressemblent entre elles :
-    créer un nouveau thème, le nommer
-sinon :
-    les envoyer dans Divers
+# gamma beta
+le lien pour les testeurs, à renvoyer à Camille
 ```
 
-C'est ça, le zéro admin : **la création de thème est une conséquence
-automatique du seuil**, pas une action de ta part.
+→ thème `gamma-beta`, créé à la volée s'il n'existe pas.
 
-Un reclustering complet une fois par mois (ou sur commande) rattrape la
-dérive des centroïdes.
+C'est le seul mécanisme à la fois sans administration et **totalement
+indépendant de la langue** : la catégorie n'est pas devinée, elle est
+déclarée, dans les mots de l'utilisateur. `# Rechnungen`, `# 仕事のメモ` et
+`# работа` fonctionnent à l'identique — c'est couvert par les tests.
 
-## Le nommage automatique
+### Pourquoi un marqueur explicite et pas une devinette
 
-C'est la partie qui décide si l'outil paraît intelligent ou bête.
+Il est tentant de traiter toute première ligne courte comme un titre. Mesuré
+sur le corpus réel : **11 % des notes ont une première ligne d'allure
+« titre », et la totalité sont des faux positifs** — codes couleur
+(`2e343b 4a5568 1c1f26`), numéros de port (`port 5432`), horaires
+(`mercredi 10h 14h`), et deux mots de passe.
 
-Technique : **c-TF-IDF**, celle de BERTopic. On concatène toutes les notes
-d'un cluster en un seul document, et on cherche les termes qui distinguent
-ce document des autres clusters. Les 2-3 premiers termes deviennent le nom.
+Chacun aurait créé un thème-poubelle. Le marqueur ramène l'ambiguïté à zéro
+pour le coût d'un caractère. `NoteHeading.GuessImplicit` conserve la
+devinette, mais uniquement pour mesurer — jamais pour classer.
 
-Sur tes vraies données, ça devrait produire des choses comme
-`project-promo`, `gamma-beta`, `postgres-docker`.
+## Niveau 2 — rattachement par similarité (repli)
 
-Deux points d'attention :
+Une note sans `#` doit quand même aller quelque part. On la compare aux
+thèmes existants et on la rattache au plus proche, au-dessus d'un seuil.
 
-- **Tes notes sont en français.** Il faut une liste de stopwords français,
-  sinon tes thèmes s'appelleront « pour-que-avec ».
-- Un nom auto-généré reste modifiable à la main. Si tu renommes un thème,
-  l'outil garde ton nom et ne le régénère plus — c'est la seule
-  « administration » possible, et elle est facultative.
+La similarité se calcule en **TF-IDF cosinus** sur le contenu accumulé de
+chaque thème. Le point important : la pondération TF-IDF ne connaît aucune
+langue. Elle mesure une distribution, pas un vocabulaire.
 
-## Le modèle d'embedding
+Deux réglages appris à la mesure :
 
-**Il doit être multilingue.** Tes notes sont en français ; les modèles
-anglophones par défaut (`all-MiniLM-L6-v2`) dégradent nettement.
+- **TF sous-linéaire** (`1 + log(tf)`). Sans ça, une note qui répète 40 fois
+  le même mot écrase tout le classement — c'est exactement ce qui s'est passé
+  au premier essai, où le top était `fr`, `ville`, `24`, `00`.
+- **Rejet des tokens purement numériques.** Horaires, dates et montants sont
+  omniprésents dans des notes personnelles et n'identifient aucun sujet.
 
-| Modèle | Dims | Taille ONNX | Remarque |
-|---|---|---|---|
-| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | ~120 Mo | bon rapport qualité/taille |
-| `multilingual-e5-small` | 384 | ~130 Mo | souvent meilleur en retrieval |
+Sous le seuil, la note va dans `inbox`. Pas de thème inventé au hasard.
 
-Les deux tournent en ONNX Runtime, sur CPU, sans réseau. Les notes ne
-sortent jamais de la machine — ce qui compte vu qu'il y a une clé API et des
-brouillons clients dedans.
+## Niveau 3 — les statistiques dérivées du corpus
 
-## Coût en performance
+`CorpusProfile` déduit des données ce que les autres outils codent en dur :
 
-C'est le critère qui a guidé tout le design. Le point clé :
-
-> Le modèle n'est **jamais chargé en permanence**. Le service résident ne
-> fait que dormir sur un handle noyau. Le modèle est chargé à la fermeture
-> de Notepad, utilisé pendant ~200 ms, puis déchargé.
-
-| Phase | RAM | CPU |
+| Déduit | Comment | Vérifié |
 |---|---|---|
-| Au repos (99,99 % du temps) | ~15 Mo | **0 %** |
-| Rafale à la fermeture de Notepad | ~150 Mo pendant 1-2 s | 1 cœur brièvement |
-| Reclustering complet (mensuel) | ~200 Mo pendant ~10 s | 1 cœur |
+| Mots vides | tout token présent dans plus de 25 % des notes | sur le corpus réel : `le, de, pas, la, et, pour, les, un, en, je…` |
+| Mots d'ouverture | premiers mots récurrents des notes | trouve `salut` en français et `hi` en anglais, **même code** |
+| Rareté d'un terme | IDF | fait remonter `streamelements`, enterre `faut` |
 
-Embedder 3 notes coûte quelques dizaines de millisecondes. Le vrai coût est
-le chargement du modèle, d'où le fait de ne le faire qu'en rafale.
+Aucune de ces listes n'est écrite nulle part. Sur un corpus anglais, la même
+classe produit `the`, `and`, `to`. Les tests le vérifient sur du français, de
+l'anglais et de l'allemand.
 
-## Ce qui va mal marcher, honnêtement
+C'est ce qui rend le repli du niveau 2 transposable.
 
-- **Les notes très courtes.** Une note qui contient juste une URL n'a
-  presque aucun signal sémantique. Prévoir un chemin dédié : extraire le
-  domaine, grouper les liens à part.
-- **Les notes fourre-tout.** Une note qui parle de trois sujets ira dans un
-  seul cluster. Découper une note en sections avant d'embedder est une piste,
-  mais ça complique beaucoup — à garder pour plus tard.
-- **Le seuil de rattachement.** 0,55 est un point de départ, pas une
-  vérité. Il se règle en regardant les résultats sur tes 100 notes. Prévoir
-  une commande `--dry-run` qui affiche le classement proposé sans rien
-  écrire : c'est l'outil de réglage, et c'est aussi le filet de sécurité.
+## Ce qui reste spécifique au français, et qui est optionnel
 
-## Ordre de travail conseillé
+`NoteSignals` détecte les brouillons de message par salutation, les formules
+de politesse et les noms propres par capitalisation. **Ces signaux sont des
+compléments, jamais le socle.** Ils sont documentés comme tels dans le code.
 
-1. `--dry-run` qui affiche les clusters proposés sur tes 100 notes, **sans
-   jamais écrire**. C'est ici que tu passeras le plus de temps, et c'est
-   sans risque.
-2. Réglage du seuil et du nommage jusqu'à ce que le classement te paraisse
-   juste.
-3. Seulement ensuite, brancher l'écriture.
+Seuls les URL et les domaines y sont réellement universels — et ils sont
+étonnamment informatifs : `contoso.tv`, `plexo.fabrikam.com`,
+`contoso.co` identifient un projet sans ambiguïté.
+
+## Ce que ça donne sur le corpus réel
+
+| Signal | Notes | Part |
+|---|---|---|
+| Brouillon de message | 12 | 12,1 % |
+| Registre épistolaire | 15 | 15,2 % |
+| Marqueurs techniques | 15 | 15,2 % |
+| Contient une URL | 12 | 12,1 % |
+| Moins de 80 caractères | 13 | 13,1 % |
+
+Longueur médiane 705 caractères, maximum 25 181.
+
+## Le démarrage à froid
+
+Les 100 notes existantes n'ont pas de `#`. Elles passeront donc toutes par le
+repli, ce qui produira un classement approximatif — c'est attendu, et sans
+gravité : le classement s'améliore à mesure que les notes récentes portent un
+titre.
+
+Trois options, à trancher à l'usage :
+
+1. Tout envoyer dans `inbox` et titrer au fil de l'eau.
+2. Lancer le niveau 2 sur tout le corpus et corriger à la main.
+3. Une passe interactive unique, note par note.
+
+L'option 1 est la plus honnête : elle n'invente rien.
+
+## Coût
+
+Aucun modèle, aucune API, aucune connexion. TF-IDF sur 100 notes coûte
+quelques millisecondes. Le classement est **gratuit et hors ligne par
+construction**, pas par configuration.
+
+Un modèle d'embedding local reste possible plus tard pour améliorer le repli
+du niveau 2, mais il n'est pas nécessaire — et il coûterait 150 Mo de RAM en
+rafale pour un gain incertain sur des notes courtes.
+
+## Ordre de travail
+
+1. `nptidy analyze` pour regarder son propre corpus.
+2. Niveau 1 : titres explicites. Simple, exact, sans risque.
+3. Niveau 2 : repli TF-IDF, réglé en `--dry-run` jusqu'à ce que le classement
+   paraisse juste.
+4. Seulement ensuite, brancher l'écriture.

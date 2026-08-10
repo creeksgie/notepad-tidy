@@ -70,6 +70,42 @@ la disparition du **dernier**.
 L'étape 3 n'est pas cosmétique : si tu relances Notepad pendant qu'on
 travaille, il reprend la main sur les fichiers et tout se perd.
 
+## Extinction brutale, plantage, mise à jour Windows
+
+Si le PC s'éteint sans que Notepad soit fermé, Windows tue Notepad — et tue
+aussi notre service, souvent avant qu'il ait pu travailler. Des notes restent
+donc à ranger, sans que personne n'ait rien remarqué.
+
+**Il n'y a pas de cas particulier à écrire.** Le fichier d'état rend le
+travail en attente détectable de façon déclarative : est en attente tout ce
+qui, dans `TabState`, ne correspond pas à l'état enregistré — peu importe la
+raison, extinction brutale, plantage ou service arrêté à la main.
+
+Le service exécute donc une **passe de réconciliation à chaque démarrage**,
+avant d'entrer en attente :
+
+```
+démarrage du service
+  → Notepad tourne-t-il déjà ?
+        oui  → ne rien faire, entrer directement en attente de sa fermeture
+        non  → passe de réconciliation, puis attente
+```
+
+Le premier cas n'est pas théorique : Windows peut relancer Notepad tout seul
+au démarrage de session, via « Rouvrir les applications au redémarrage ». La
+réconciliation obéit donc exactement aux mêmes gardes que le reste — si
+Notepad est là, on s'abstient.
+
+Deux conséquences agréables :
+
+- Le service est **redémarrable à tout moment** sans rien perdre.
+- Le chemin de démarrage et le chemin nominal sont le **même code**, donc
+  testés par les mêmes tests.
+
+Une tuerie brutale de Notepad peut aussi laisser ses enregistrements d'état
+`.0/.1` désynchronisés du `.bin`. C'est déjà couvert : tout fichier dont le
+layout ne tombe pas juste est refusé plutôt que réécrit.
+
 ## Idempotence
 
 Sans état, le cycle 2 refusionne ce que le cycle 1 a déjà fusionné, et le
