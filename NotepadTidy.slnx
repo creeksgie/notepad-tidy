@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/NotepadTidy.Cli/NotepadTidy.Cli.csproj" />
     <Project Path="src/NotepadTidy.Core/NotepadTidy.Core.csproj" />
+    <Project Path="src/NotepadTidy.Service/NotepadTidy.Service.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NotepadTidy.Core.Tests/NotepadTidy.Core.Tests.csproj" />

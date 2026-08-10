@@ -285,43 +285,22 @@ static int Tidy(TabStore store, INotepadGuard guard, string[] args)
         return 3;
     }
 
-    var records = store.ReadAll().Where(r => r.IsSafeToRewrite).ToList();
-    var vocabulary = ThemeVocabulary.Discover(records.Select(r => r.Text));
+    // Same planner and same runner as the background service: there is no
+    // shortcut path that skips a guard.
+    var runner = new TidyRunner(store, guard);
+    var plan = runner.Plan();
 
-    var groups = new Dictionary<string, List<TabRecord>>(StringComparer.OrdinalIgnoreCase);
-    int unfiled = 0;
-    foreach (var record in records)
-    {
-        var theme = ThemeVocabulary.Match(record.Text, vocabulary)
-                 ?? ThemeMention.FindInBody(record.Text, vocabulary).Theme;
-        if (theme is null) { unfiled++; continue; }
-        if (!groups.TryGetValue(theme, out var list)) groups[theme] = list = [];
-        list.Add(record);
-    }
-
-    // Only themes with something to merge are worth touching.
-    var mergeable = groups.Where(g => g.Value.Count > 1)
-                          .OrderByDescending(g => g.Value.Count).ToList();
-
-    Console.WriteLine($"{records.Count} usable notes, {groups.Count} themes, {unfiled} unfiled");
-    Console.WriteLine($"{mergeable.Count} themes have more than one note and would be merged.");
+    Console.WriteLine($"{plan.UsableNotes} usable notes, {plan.ThemeCount} themes, {plan.Unfiled} unfiled");
+    Console.WriteLine($"{plan.Groups.Count} themes have more than one note and would be merged.");
     Console.WriteLine();
 
-    int wouldAbsorb = 0;
-    foreach (var (theme, notes) in mergeable)
-    {
-        // The container keeps the largest note, so the bulk of the content
-        // never moves. The others are appended to it.
-        var container = notes.OrderByDescending(n => n.Text.Length).First();
-        var sources = notes.Where(n => n.Id != container.Id).ToList();
-        wouldAbsorb += sources.Count;
-        Console.WriteLine($"  {theme,-20} {notes.Count,3} notes → container {container.Id.ToString()[..8]} " +
-                          $"({container.Text.Length} chars, absorbs {sources.Count})");
-    }
+    foreach (var group in plan.Groups)
+        Console.WriteLine($"  {group.Theme,-20} → container {group.Container.ToString()[..8]} " +
+                          $"({group.ContainerLength} chars, absorbs {group.Sources.Count})");
 
     Console.WriteLine();
-    Console.WriteLine($"Tabs before : {records.Count}");
-    Console.WriteLine($"Tabs after  : {records.Count - wouldAbsorb}");
+    Console.WriteLine($"Tabs before : {plan.UsableNotes}");
+    Console.WriteLine($"Tabs after  : {plan.TabsAfter}");
 
     if (!apply)
     {
@@ -330,57 +309,11 @@ static int Tidy(TabStore store, INotepadGuard guard, string[] args)
         return 0;
     }
 
-    // Backup before writing. Merging concatenates rather than drops text, so a
-    // wrong theme is recoverable by hand. The case this covers is different:
-    // sources are deleted once the container is written, so a malformed
-    // container — a writer bug, or a Notepad format change — would leave
-    // nothing to recover from. Rotated, so it stays around 2 MB.
-    var backupRoot = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "notepad-tidy", "backups");
-    var backupDir = Path.Combine(backupRoot, DateTime.Now.ToString("yyyy-MM-dd_HHmmss"));
+    var outcome = runner.Run(plan);
     Console.WriteLine();
-    Console.WriteLine($"Backup → {backupDir}");
-    Console.WriteLine($"  {store.Backup(backupDir)} files copied");
-    RotateBackups(backupRoot, keep: 3);
-
-    var merger = new TabMerger(store, guard);
-    int done = 0, refused = 0;
-    Console.WriteLine();
-    foreach (var (theme, notes) in mergeable)
-    {
-        var container = notes.OrderByDescending(n => n.Text.Length).First();
-        var sources = notes.Where(n => n.Id != container.Id).Select(n => n.Id).ToList();
-        var separator = $"{Environment.NewLine}{Environment.NewLine}--- {theme} ---{Environment.NewLine}";
-
-        var result = merger.Merge(container.Id, sources, separator);
-        if (result.Ok)
-        {
-            done++;
-            Console.WriteLine($"  {theme,-20} merged {result.Absorbed} notes ({result.Chars} chars)");
-        }
-        else
-        {
-            refused++;
-            Console.Error.WriteLine($"  {theme,-20} REFUSED ({result.Refusal}): {result.Message}");
-        }
-    }
-
-    Console.WriteLine();
-    Console.WriteLine($"{done} themes merged, {refused} refused.");
-    return refused > 0 ? 4 : 0;
-}
-
-/// <summary>Keeps only the most recent backups.</summary>
-static void RotateBackups(string root, int keep)
-{
-    if (!Directory.Exists(root)) return;
-    foreach (var old in new DirectoryInfo(root).GetDirectories()
-                            .OrderByDescending(d => d.Name).Skip(keep))
-    {
-        try { old.Delete(recursive: true); }
-        catch (IOException) { /* a locked backup is not worth failing the run */ }
-    }
+    if (outcome.BackupPath is not null) Console.WriteLine($"Backup → {outcome.BackupPath}");
+    Console.WriteLine(outcome.Message);
+    return outcome.Refused > 0 ? 4 : 0;
 }
 
 static int List(TabStore store)
