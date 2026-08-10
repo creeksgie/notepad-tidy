@@ -1,13 +1,15 @@
 using System.Text;
 using NotepadTidy.Core;
+using NotepadTidy.Core.IO;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-var store = new TabStore();
+var store = TabStore.Default();
+var guard = new NotepadProcessGuard();
 
-if (!store.Exists)
+if (!Directory.Exists(store.Paths.TabStateDir))
 {
-    Console.Error.WriteLine($"TabState introuvable : {store.TabStateDir}");
+    Console.Error.WriteLine($"TabState introuvable : {store.Paths.TabStateDir}");
     return 2;
 }
 
@@ -15,7 +17,7 @@ var command = args.Length > 0 ? args[0].ToLowerInvariant() : "stats";
 
 switch (command)
 {
-    case "stats": return Stats(store);
+    case "stats": return Stats(store, guard);
     case "list": return List(store);
     case "dump": return Dump(store, args);
     case "backup": return Backup(store, args);
@@ -27,22 +29,21 @@ switch (command)
               stats                       état de santé du TabState
               list                        liste les onglets avec un aperçu
               dump <guid>                 contenu et en-tête d'un onglet
-              backup <dossier>            copie intégrale de LocalState
-              merge <cible> <src...>      fusionne des notes (ajouter --apply pour écrire)
+              backup <dossier>            copie de TabState et WindowState
+              merge <cible> <src...>      fusionne des notes
 
-            Sans --apply, merge ne fait qu'afficher ce qu'il ferait.
+            merge n'écrit rien sans --apply.
             """);
         return 1;
 }
 
-static int Stats(TabStore store)
+static int Stats(TabStore store, INotepadGuard guard)
 {
     var records = store.ReadAll().ToList();
-    var byStatus = records.GroupBy(r => r.Status)
-                          .ToDictionary(g => g.Key, g => g.Count());
+    var byStatus = records.GroupBy(r => r.Status).ToDictionary(g => g.Key, g => g.Count());
 
-    Console.WriteLine($"TabState : {store.TabStateDir}");
-    Console.WriteLine($"Notepad tourne : {(TabStore.IsNotepadRunning() ? "OUI (écriture interdite)" : "non")}");
+    Console.WriteLine($"TabState : {store.Paths.TabStateDir}");
+    Console.WriteLine($"Notepad tourne : {(guard.IsRunning ? "OUI (écriture interdite)" : "non")}");
     Console.WriteLine($"Onglets : {records.Count}");
     Console.WriteLine();
 
@@ -53,11 +54,12 @@ static int Stats(TabStore store)
         {
             TabStatus.Ok => "réécriture sûre",
             TabStatus.FileBacked => "vrais fichiers — ne pas toucher",
-            TabStatus.LayoutMismatch => "variante de format non gérée — à ignorer",
-            TabStatus.BadCrc => "corrompus ou format modifié",
+            TabStatus.LayoutMismatch => "layout non vérifié — ignorés",
+            TabStatus.UnknownVariant => "variante inconnue — Notepad a peut-être changé",
+            TabStatus.BadCrc => "corrompus",
             _ => "",
         };
-        Console.WriteLine($"  {status,-15} {n,4}   {note}");
+        Console.WriteLine($"  {status,-16} {n,4}   {note}");
     }
 
     var safe = records.Where(r => r.IsSafeToRewrite).ToList();
@@ -72,8 +74,7 @@ static int List(TabStore store)
     {
         var preview = r.Text.ReplaceLineEndings(" ").Trim();
         if (preview.Length > 60) preview = preview[..60] + "…";
-        var flag = r.IsSafeToRewrite ? " " : "!";
-        Console.WriteLine($"{flag} {r.Id}  {r.Text.Length,6}c  {r.Status,-14}  {preview}");
+        Console.WriteLine($"{(r.IsSafeToRewrite ? " " : "!")} {r.Id}  {r.Text.Length,6}c  {r.Status,-16}  {preview}");
     }
     return 0;
 }
@@ -85,17 +86,19 @@ static int Dump(TabStore store, string[] args)
         Console.Error.WriteLine("usage : nptidy dump <guid>");
         return 1;
     }
+    if (!store.FileSystem.FileExists(store.Paths.TabFile(id)))
+    {
+        Console.Error.WriteLine($"introuvable : {store.Paths.TabFile(id)}");
+        return 2;
+    }
 
-    var path = store.PathFor(id);
-    if (!File.Exists(path)) { Console.Error.WriteLine($"introuvable : {path}"); return 2; }
-
-    var record = TabRecord.Parse(id, TabStore.ReadShared(path));
-    Console.WriteLine($"GUID          {record.Id}");
-    Console.WriteLine($"Statut        {record.Status}");
-    Console.WriteLine($"Taille        {record.FileLength} octets");
-    Console.WriteLine($"Longueur      {record.DeclaredLength} caractères");
-    Console.WriteLine($"Texte @       offset {record.TextOffset}");
-    Console.WriteLine($"Curseur       {record.CursorStart}/{record.CursorEnd}");
+    var record = store.Read(id);
+    Console.WriteLine($"GUID       {record.Id}");
+    Console.WriteLine($"Statut     {record.Status}");
+    Console.WriteLine($"Taille     {record.FileLength} octets");
+    Console.WriteLine($"Longueur   {record.DeclaredLength} caractères");
+    Console.WriteLine($"Texte @    offset {record.TextOffset}");
+    Console.WriteLine($"Curseur    {record.CursorStart}/{record.CursorEnd}");
     Console.WriteLine(new string('-', 60));
     Console.WriteLine(record.Text);
     Console.WriteLine(new string('-', 60));
@@ -105,8 +108,7 @@ static int Dump(TabStore store, string[] args)
 static int Backup(TabStore store, string[] args)
 {
     if (args.Length < 2) { Console.Error.WriteLine("usage : nptidy backup <dossier>"); return 1; }
-    int n = store.Backup(args[1]);
-    Console.WriteLine($"{n} fichiers copiés vers {args[1]}");
+    Console.WriteLine($"{store.Backup(args[1])} fichiers copiés vers {args[1]}");
     return 0;
 }
 
@@ -129,13 +131,12 @@ static int Merge(TabStore store, string[] args)
 
     if (!apply)
     {
-        Console.WriteLine($"[simulation] conteneur {container}");
-        var target = TabRecord.Parse(container, TabStore.ReadShared(store.PathFor(container)));
-        Console.WriteLine($"  état actuel : {target.Status}, {target.Text.Length} caractères");
+        var target = store.Read(container);
+        Console.WriteLine($"[simulation] conteneur {container} — {target.Status}, {target.Text.Length} caractères");
         int total = target.Text.Length;
         foreach (var id in sources)
         {
-            var r = TabRecord.Parse(id, TabStore.ReadShared(store.PathFor(id)));
+            var r = store.Read(id);
             Console.WriteLine($"  + {id}  {r.Text.Length,6}c  {r.Status}");
             total += r.Text.Length + separator.Length;
         }
@@ -144,9 +145,13 @@ static int Merge(TabStore store, string[] args)
         return 0;
     }
 
-    var result = store.Merge(container, sources, separator);
-    if (!result.Ok) { Console.Error.WriteLine($"refusé : {result.Message}"); return 3; }
+    var result = TabMerger.Default().Merge(container, sources, separator);
+    if (!result.Ok)
+    {
+        Console.Error.WriteLine($"refusé ({result.Refusal}) : {result.Message}");
+        return 3;
+    }
 
-    Console.WriteLine($"Fusionné : {result.Absorbed} notes absorbées, {result.Chars} caractères, {result.Bytes} octets");
+    Console.WriteLine($"Fusionné : {result.Absorbed} notes, {result.Chars} caractères, {result.Bytes} octets");
     return 0;
 }

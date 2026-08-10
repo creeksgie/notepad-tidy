@@ -117,14 +117,43 @@ Ces notes n'existent nulle part ailleurs. Les règles :
 ## Découpage
 
 ```
-NotepadTidy.Core/       parseur, writer, CRC — aucune dépendance
-NotepadTidy.Classify/   embeddings ONNX, clustering, nommage
-NotepadTidy.Service/    watcher événementiel, orchestration
-NotepadTidy.Cli/        dump, verify, dry-run, merge manuel
+NotepadTidy.Core/
+    Crc32              le checksum, isolé et sans état
+    TabRecord          parse + build d'un onglet — pur, aucune I/O
+    TabPaths           résolution de chemins — pur, aucune I/O
+    TabStore           lecture et énumération du TabState
+    TabMerger          la fusion : le seul code qui détruit des données
+    IO/                ITabFileSystem, INotepadGuard + implémentations Windows
+NotepadTidy.Classify/   embeddings ONNX, clustering, nommage        (à faire)
+NotepadTidy.Service/    watcher événementiel, orchestration          (à faire)
+NotepadTidy.Cli/        stats, list, dump, backup, merge
 ```
 
-`Core` est volontairement sans dépendance et testable seul : c'est la
-brique qui peut détruire des données, elle doit être la plus simple possible.
+`Core` n'a aucune dépendance externe. Les trois quarts de son code
+(`Crc32`, `TabRecord`, `TabPaths`) sont des fonctions pures, testables sans
+disque ni Windows.
+
+### Pourquoi les interfaces `IO/`
+
+Elles n'existent pas par principe SOLID mais pour une raison précise :
+`TabMerger` supprime des fichiers irrécupérables. Derrière
+`ITabFileSystem` et `INotepadGuard`, ses tests tournent en mémoire et
+peuvent vérifier qu'un refus n'a **rien** écrit ni supprimé — ce qui est
+impossible avec des appels statiques à `File` et `Process`.
+
+C'est la seule abstraction du projet. Le reste est concret par défaut.
+
+### Résistance aux mises à jour de Notepad
+
+L'octet 4 de l'en-tête vaut `01` sur la totalité du corpus de référence et sa
+signification est inconnue. Il sert de sentinelle de version : toute autre
+valeur bascule le fichier en `TabStatus.UnknownVariant`, et tout ce qui n'est
+pas `TabStatus.Ok` est refusé à l'écriture.
+
+Autrement dit, si une mise à jour Windows modifie le format, le comportement
+par défaut est **l'abstention**, jamais un parsing décalé qui détruirait des
+notes. Ajouter le support d'une nouvelle variante consistera à étendre la
+détection, pas à réécrire le parseur.
 
 ## Publication
 

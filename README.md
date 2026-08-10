@@ -45,12 +45,23 @@ dotnet build -c Release
 dotnet test
 ```
 
-Les tests couvrent le parsing d'un onglet réel capturé sur disque, les
-frontières de varint (127/128, 16383/16384) où l'en-tête change de taille,
-la variante à compteur, et surtout **tous les cas de refus** : magic
-inattendu, CRC corrompu, longueur trafiquée, onglet adossé à un fichier.
-C'est cette dernière famille qui compte le plus — c'est elle qui garantit
-qu'on n'écrase pas une note qu'on a mal comprise.
+29 tests, dont la moitié sur `TabMerger` — le seul code qui supprime des
+fichiers. Il travaille derrière un `ITabFileSystem`, donc ses tests tournent
+entièrement en mémoire, sans jamais approcher un vrai TabState.
+
+Ce qui est verrouillé, par ordre d'importance :
+
+- **Les refus.** Notepad qui tourne, Notepad qui revient au milieu de
+  l'opération, conteneur adossé à un fichier, source au CRC corrompu,
+  variante de format inconnue. Dans chaque cas on vérifie que **rien** n'a
+  été écrit ni supprimé.
+- **Le tout ou rien.** Une seule source douteuse annule l'opération entière :
+  absorber à moitié détruirait des notes sans contrepartie.
+- **L'idempotence.** Une deuxième passe ne fait pas enfler le conteneur.
+- **Les frontières de varint** (127/128, 16383/16384), où l'en-tête change de
+  taille et décale tout le bloc de texte.
+- Un vecteur binaire issu d'un onglet réel, comme détecteur de régression du
+  format.
 
 ```bash
 # état de santé du TabState — lecture seule

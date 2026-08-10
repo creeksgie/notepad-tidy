@@ -16,6 +16,11 @@ public enum TabStatus
     BadCrc,
     /// <summary>Fichier trop court pour contenir un en-tête.</summary>
     TooShort,
+    /// <summary>
+    /// En-tête d'une variante inconnue — probablement une mise à jour de
+    /// Notepad. On refuse plutôt que de parser à l'aveugle.
+    /// </summary>
+    UnknownVariant,
 }
 
 /// <summary>
@@ -36,7 +41,20 @@ public sealed class TabRecord
     public bool IsSafeToRewrite => Status == TabStatus.Ok;
 
     private const byte FlagUnsaved = 0x00;
-    private static readonly byte[] ConfigBlock = [0x01, 0x00, 0x00, 0x03, 0x01, 0x01, 0x01];
+
+    /// <summary>
+    /// Octet 4 de l'en-tête. Constant sur les 106 onglets du corpus de
+    /// référence. Sert de sentinelle de version : tout autre valeur fait
+    /// basculer le fichier en <see cref="TabStatus.UnknownVariant"/>.
+    /// </summary>
+    private const byte KnownVariantMarker = 0x01;
+
+    /// <summary>
+    /// Compteur du bloc de config émis par <see cref="Build"/>. La valeur 03
+    /// est celle que Notepad a acceptée en conditions réelles ; le parseur
+    /// accepte aussi 02, présent sur 17 % du corpus.
+    /// </summary>
+    private const byte WrittenExtraCount = 0x03;
 
     public static TabRecord Parse(Guid id, ReadOnlySpan<byte> file)
     {
@@ -50,8 +68,14 @@ public sealed class TabRecord
         if (file[3] != FlagUnsaved)
             return new TabRecord { Id = id, Status = TabStatus.FileBacked, FileLength = file.Length };
 
-        int i = 4;
-        i++;                                    // octet inconnu, vaut 01 partout
+        // Garde-fou anti-dérive de format. L'octet 4 vaut 01 sur la totalité du
+        // corpus de référence et sa signification reste inconnue. Si une mise à
+        // jour de Notepad le change, on veut un refus franc plutôt qu'un
+        // parsing silencieusement décalé qui détruirait des notes.
+        if (file[4] != KnownVariantMarker)
+            return new TabRecord { Id = id, Status = TabStatus.UnknownVariant, FileLength = file.Length };
+
+        int i = 5;
         int cursorStart = ReadVarint(file, ref i);
         int cursorEnd = ReadVarint(file, ref i);
 
@@ -110,16 +134,22 @@ public sealed class TabRecord
 
         var body = new List<byte>(18 + n * 2 + 1)
         {
-            0x4E, 0x50,     // "NP"
-            0x00,           // séquence
-            FlagUnsaved,    // note volante
-            0x01,           // inconnu
+            0x4E, 0x50,             // "NP"
+            0x00,                   // séquence
+            FlagUnsaved,            // note volante
+            KnownVariantMarker,
         };
 
-        WriteVarint(body, n);   // curseur début — placé en fin de texte
-        WriteVarint(body, n);   // curseur fin
-        body.AddRange(ConfigBlock);
-        WriteVarint(body, n);   // longueur du contenu
+        WriteVarint(body, n);       // curseur début — placé en fin de texte
+        WriteVarint(body, n);       // curseur fin
+
+        // Bloc à compteur. On émet systématiquement la variante 03, celle que
+        // Notepad a acceptée en conditions réelles. Le parseur, lui, lit le
+        // compteur et accepte les deux.
+        body.AddRange([0x01, 0x00, 0x00, WrittenExtraCount]);
+        for (int k = 0; k < WrittenExtraCount; k++) body.Add(0x01);
+
+        WriteVarint(body, n);       // longueur du contenu
         body.AddRange(Encoding.Unicode.GetBytes(text));
         body.Add(0x01);         // marqueur
 
