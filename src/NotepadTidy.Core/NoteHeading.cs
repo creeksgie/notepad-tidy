@@ -65,22 +65,36 @@ public static class NoteHeading
     /// </summary>
     public static string StripHeading(string text)
     {
-        var lines = text.Split('\n');
-        for (int i = 0; i < lines.Length; i++)
-        {
-            var trimmed = lines[i].Trim();
-            if (trimmed.Length == 0) continue;
+        // Index arithmetic rather than Split/Join, for two reasons. Splitting on
+        // '\n' alone is wrong — Notepad writes lone '\r' too, and a note using
+        // them would count as a single line, so "drop the heading line" would
+        // drop the whole note. And rejoining would rewrite every line ending in
+        // the note. Slicing touches nothing it was not asked to touch.
+        int i = 0;
+        while (i < text.Length && IsLineBreakOrSpace(text[i])) i++;
+        if (i >= text.Length || text[i] != Marker) return text;
 
-            // Not a heading: the note has none, leave the text untouched.
-            if (trimmed.Length < 2 || trimmed[0] != Marker) return text;
+        int endOfLine = i;
+        while (endOfLine < text.Length && text[endOfLine] is not ('\r' or '\n')) endOfLine++;
 
-            // Drop the heading line, then the blank lines that followed it.
-            int start = i + 1;
-            while (start < lines.Length && lines[start].Trim().Length == 0) start++;
-            return string.Join('\n', lines.Skip(start));
-        }
-        return text;
+        int bodyStart = endOfLine;
+        while (bodyStart < text.Length && IsLineBreakOrSpace(text[bodyStart])) bodyStart++;
+
+        // A heading is one short line. If we are about to remove more than that,
+        // the parse went wrong and the safe move is to change nothing — losing a
+        // note is far worse than keeping a redundant title.
+        if (bodyStart > MaxLength + MaxStrippedSlack) return text;
+
+        return text[bodyStart..];
     }
+
+    /// <summary>
+    /// Blank lines and indentation allowed around a heading before
+    /// <see cref="StripHeading"/> considers the removal suspicious.
+    /// </summary>
+    private const int MaxStrippedSlack = 16;
+
+    private static bool IsLineBreakOrSpace(char c) => c is '\r' or '\n' or ' ' or '\t';
 
     /// <summary>The first non-empty, trimmed lines of a note.</summary>
     public static IEnumerable<string> FirstNonEmptyLines(string note, int depth)

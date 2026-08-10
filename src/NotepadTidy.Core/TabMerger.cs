@@ -9,6 +9,7 @@ public enum MergeRefusal
     ContainerUnreadable,
     SourceUnreadable,
     NoUsableSource,
+    SourceLostContent,
     WriterSelfCheckFailed,
 }
 
@@ -70,7 +71,16 @@ public sealed class TabMerger(TabStore store, INotepadGuard guard)
                 return MergeResult.Refused(MergeRefusal.SourceUnreadable,
                     $"Source {id} is not readable: {record.Status}");
 
-            texts.Add(stripSourceHeadings ? NoteHeading.StripHeading(record.Text) : record.Text);
+            var text = stripSourceHeadings ? NoteHeading.StripHeading(record.Text) : record.Text;
+
+            // Anything that removes text must remove a heading and nothing else.
+            // A transformation bug here is invisible to the writer self-check —
+            // the file would be written perfectly, with the wrong content in it.
+            if (record.Text.Length - text.Length > NoteHeading.MaxLength + 32)
+                return MergeResult.Refused(MergeRefusal.SourceLostContent,
+                    $"Source {id} would lose {record.Text.Length - text.Length} characters — refusing.");
+
+            texts.Add(text);
             absorbed.Add(id);
         }
 
