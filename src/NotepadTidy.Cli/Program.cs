@@ -218,18 +218,39 @@ static int Themes(TabStore store)
     var groups = new Dictionary<string, List<Guid>>(StringComparer.OrdinalIgnoreCase);
     var untitled = new List<Guid>();
 
+    var byMention = new List<(Guid Id, string Theme, string Why)>();
+
     foreach (var record in records)
     {
         var theme = ThemeVocabulary.Match(record.Text, vocabulary);
-        if (theme is null) { untitled.Add(record.Id); continue; }
+
+        // Pas de titre : on cherche un thème DÉJÀ déclaré dans le corps. On
+        // n'en invente jamais un nouveau — le vocabulaire reste celui de
+        // l'utilisateur.
+        if (theme is null)
+        {
+            var mention = ThemeMention.FindInBody(record.Text, vocabulary);
+            if (!mention.Found) { untitled.Add(record.Id); continue; }
+            theme = mention.Theme!;
+            byMention.Add((record.Id, theme, $"{mention.Hits} mention(s)"));
+        }
+
         if (!groups.TryGetValue(theme, out var list)) groups[theme] = list = [];
         list.Add(record.Id);
     }
 
-    int titled = records.Count - untitled.Count;
+    int titled = records.Count - untitled.Count - byMention.Count;
     Console.WriteLine($"Notes exploitables : {records.Count}");
-    Console.WriteLine($"  avec titre « # »  : {titled}");
-    Console.WriteLine($"  sans titre        : {untitled.Count}");
+    Console.WriteLine($"  titre « # » explicite     : {titled}");
+    Console.WriteLine($"  rattachées par mention    : {byMention.Count}");
+    Console.WriteLine($"  non classées              : {untitled.Count}");
+    if (byMention.Count > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine("— Rattachements par mention dans le corps —");
+        foreach (var (id, theme, why) in byMention)
+            Console.WriteLine($"  {id.ToString()[..8]}  → {theme,-16} ({why})");
+    }
     Console.WriteLine();
     Console.WriteLine($"— {groups.Count} thèmes —");
     foreach (var (theme, ids) in groups.OrderByDescending(g => g.Value.Count).ThenBy(g => g.Key))
