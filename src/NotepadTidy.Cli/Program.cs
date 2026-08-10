@@ -204,15 +204,15 @@ static int Analyze(TabStore store)
 }
 
 /// <summary>
-/// Regroupement par titre explicite. Le regroupement est insensible à la
-/// casse : « #Plexo » et « #plexo » désignent le même thème.
+/// Groups notes by explicit heading. Grouping is insensitive to
+/// case: "#Project" and "#project" denote the same theme.
 /// </summary>
 static int Themes(TabStore store)
 {
     var records = store.ReadAll().Where(r => r.IsSafeToRewrite).ToList();
 
-    // Le thème est souvent collé au contenu (« #themeSalut ! ») : on ne peut pas
-    // le délimiter note par note. On le déduit des préfixes partagés.
+    // The theme is often glued to the content ("#themeHi!"), so it cannot be
+    // delimited note by note. It is inferred from shared prefixes instead.
     var vocabulary = ThemeVocabulary.Discover(records.Select(r => r.Text));
 
     var groups = new Dictionary<string, List<Guid>>(StringComparer.OrdinalIgnoreCase);

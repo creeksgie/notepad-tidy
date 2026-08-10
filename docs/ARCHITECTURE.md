@@ -117,7 +117,7 @@ Fichier d'état, à côté de la config :
 {
   "containers": {
     "28e8c91b-7b1e-4155-a174-f6b1b743dc06": {
-      "theme": "project-promo",
+      "theme": "project-alpha",
       "contentHash": "sha256:…",
       "lastMerged": "2026-08-10T18:56:56Z",
       "centroid": [0.021, -0.114, …]

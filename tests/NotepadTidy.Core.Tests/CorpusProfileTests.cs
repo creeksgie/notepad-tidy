@@ -3,10 +3,10 @@ using NotepadTidy.Core;
 namespace NotepadTidy.Core.Tests;
 
 /// <summary>
-/// Ces tests existent pour une raison précise : prouver que le classement ne
-/// dépend d'aucune liste codée en dur, et fonctionnerait donc chez quelqu'un
-/// d'autre, dans une autre langue. Le même code est passé sur du français, de
-/// l'anglais et de l'allemand — aucun n'est nommé dans la bibliothèque.
+/// These tests exist for one reason: to prove that classification relies on no
+/// hardcoded list, and therefore works for someone else, in another language.
+/// The same code runs over French, English and German samples — none of which
+/// is named anywhere in the library.
 /// </summary>
 public class CorpusProfileTests
 {
@@ -15,7 +15,7 @@ public class CorpusProfileTests
         "je pense que le site est pas mal mais il faut revoir la page de contact",
         "salut Alex, je te confirme que le devis est parti hier soir",
         "il faut que je pense à relancer le client pour le devis du site",
-        "salut Camille, est-ce que le paiement est bien passé de ton côté ?",
+        "salut Robin, est-ce que le paiement est bien passé de ton côté ?",
         "le serveur est tombé cette nuit, il faut que je regarde les logs",
         "docker compose up et le conteneur redémarre tout seul",
     ];
@@ -25,7 +25,7 @@ public class CorpusProfileTests
         "i think the website is fine but we need to fix the contact page",
         "hi Alex, just confirming that the quote went out yesterday",
         "we need to follow up with the client about the website quote",
-        "hi Camille, did the payment go through on your side ?",
+        "hi Robin, did the payment go through on your side ?",
         "the server went down last night, need to check the logs",
         "docker compose up and the container restarts by itself",
     ];
@@ -37,7 +37,7 @@ public class CorpusProfileTests
 
         Assert.Contains("le", profile.StopWords);
         Assert.Contains("que", profile.StopWords);
-        // Un mot rare et porteur de sens ne doit jamais devenir un mot vide.
+        // A rare, meaningful word must never become a stop word.
         Assert.DoesNotContain("docker", profile.StopWords);
         Assert.DoesNotContain("alex", profile.StopWords);
     }
@@ -55,8 +55,8 @@ public class CorpusProfileTests
     [Fact]
     public void OpeningWords_DetectGreetingsInEitherLanguage()
     {
-        // "salut" et "hi" sont découverts de la même façon : ce sont les mots
-        // par lesquels plusieurs notes commencent. Aucun n'est listé nulle part.
+        // "salut" and "hi" are discovered the same way: they are the words
+        // several notes begin with. Neither is listed anywhere.
         Assert.Contains("salut", new CorpusProfile(French, openingThreshold: 0.2).OpeningWords);
         Assert.Contains("hi", new CorpusProfile(English, openingThreshold: 0.2).OpeningWords);
     }
@@ -67,17 +67,20 @@ public class CorpusProfileTests
         var fr = new CorpusProfile(French, openingThreshold: 0.2);
         var en = new CorpusProfile(English, openingThreshold: 0.2);
 
-        Assert.True(fr.OpensLikeCorrespondence("salut Robin, petite question"));
+        Assert.True(fr.OpensLikeCorrespondence("salut Camille, petite question"));
         Assert.False(fr.OpensLikeCorrespondence("docker compose down"));
-        Assert.True(en.OpensLikeCorrespondence("hi Robin, quick question"));
+        Assert.True(en.OpensLikeCorrespondence("hi Camille, quick question"));
         Assert.False(en.OpensLikeCorrespondence("docker compose down"));
     }
 
+    /// <summary>
+    /// The "capitalised means proper noun" heuristic collapses in German,
+    /// where every common noun is capitalised. The statistical approach does
+    /// not look at case at all.
+    /// </summary>
     [Fact]
     public void Tokenize_HandlesGermanWhereEveryNounIsCapitalised()
     {
-        // L'heuristique « capitalisé = nom propre » s'effondre en allemand.
-        // L'approche statistique, elle, ne s'appuie pas du tout sur la casse.
         string[] german =
         [
             "die Rechnung für den Kunden ist noch nicht bezahlt",
@@ -108,9 +111,9 @@ public class CorpusProfileTests
     {
         string[] corpus =
         [
-            "rendez-vous à 14 30 avec le client pour le projet gamma",
-            "rendez-vous à 14 30 demain pour le projet gamma",
-            "le client a validé 14 30 pour le projet",
+            "meeting at 14 30 with the client about project atlas",
+            "meeting at 14 30 tomorrow about project atlas",
+            "the client approved 14 30 for the project",
         ];
         var profile = new CorpusProfile(corpus);
 
@@ -118,7 +121,7 @@ public class CorpusProfileTests
 
         Assert.DoesNotContain("14", tokens);
         Assert.DoesNotContain("30", tokens);
-        Assert.DoesNotContain("le", tokens);
+        Assert.DoesNotContain("the", tokens);
     }
 
     [Fact]
@@ -133,9 +136,9 @@ public class CorpusProfileTests
     [Fact]
     public void Tokenize_KeepsAlphanumericIdentifiers()
     {
-        var tokens = CorpusProfile.Tokenize("migration vers net10 et gpt4").ToList();
+        var tokens = CorpusProfile.Tokenize("migrate to net10 and http2").ToList();
 
         Assert.Contains("net10", tokens);
-        Assert.Contains("gpt4", tokens);
+        Assert.Contains("http2", tokens);
     }
 }

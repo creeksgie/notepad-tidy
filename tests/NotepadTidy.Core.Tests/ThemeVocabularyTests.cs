@@ -3,19 +3,27 @@ using NotepadTidy.Core;
 namespace NotepadTidy.Core.Tests;
 
 /// <summary>
-/// Cas réel : en ajoutant « #thème » au début de la première ligne, le thème
-/// se retrouve collé au contenu — « #themeSalut ! ». Aucun séparateur ne dit
-/// où il s'arrête. Mais un thème sert plusieurs fois, donc le préfixe partagé
-/// le révèle. Ces tests figent ce raisonnement.
+/// Real-world case: prepending "#theme" to the first line glues the theme to
+/// the content — "#themeHi there!". No separator says where it ends. But a
+/// theme is reused, so the shared prefix reveals it. These tests pin that
+/// reasoning down.
 /// </summary>
 public class ThemeVocabularyTests
 {
     [Fact]
     public void RawHeadingLine_ReadsWhatFollowsTheMarker()
     {
-        Assert.Equal("themeSalut !", ThemeVocabulary.RawHeadingLine("#themeSalut !\r\nsuite"));
-        Assert.Equal("plexo", ThemeVocabulary.RawHeadingLine("#plexo\r\n\r\ncontenu"));
-        Assert.Null(ThemeVocabulary.RawHeadingLine("pas de marqueur ici"));
+        Assert.Equal("themeHi!", ThemeVocabulary.RawHeadingLine("#themeHi!\r\nbody"));
+        Assert.Equal("project", ThemeVocabulary.RawHeadingLine("#project\r\n\r\nbody"));
+        Assert.Null(ThemeVocabulary.RawHeadingLine("no marker here"));
+    }
+
+    [Fact]
+    public void RawHeadingLine_HandlesLoneCarriageReturns()
+    {
+        // Notepad does not always write CRLF pairs. Splitting on '\n' only
+        // would swallow the whole note into the heading.
+        Assert.Equal("project", ThemeVocabulary.RawHeadingLine("#project\rbody\rmore"));
     }
 
     [Fact]
@@ -23,104 +31,103 @@ public class ThemeVocabularyTests
     {
         string[] notes =
         [
-            "#themeSalut ! petit message",
-            "#themeÉvénement reçu du canal",
-            "#theme// configuration contoso",
-            "#projectpour les colonnes",
-            "#projectsite ecommerce",
-            "#projecttaux horaire du mois",
+            "#alphaHi! short message",
+            "#alphaEvent received from the channel",
+            "#alpha// configuration block",
+            "#betaabout the columns",
+            "#betaecommerce site",
+            "#betahourly rate",
         ];
 
         var themes = ThemeVocabulary.Discover(notes);
 
-        Assert.Contains("theme", themes);
-        Assert.Contains("project", themes);
+        Assert.Contains("alpha", themes);
+        Assert.Contains("beta", themes);
     }
 
     /// <summary>
-    /// Un préfixe court est toujours au moins aussi fréquent que ses
-    /// extensions. Trier par nombre seul fusionnerait donc plexo et play
-    /// sous « pl ».
+    /// A short prefix is always at least as frequent as its extensions, so
+    /// sorting by count alone would merge distinct themes under "pr".
     /// </summary>
     [Fact]
     public void Discover_DoesNotCollapseDistinctThemesSharingAPrefix()
     {
         string[] notes =
         [
-            "#plexocreate table public", "#plexoliste des membres", "#plexoweb app securite",
-            "#playcaravane sand witch", "#playbas gauche haut", "#playconfig manette",
+            "#projectcreate table", "#projectuser list", "#projectweb security",
+            "#promoflyer draft", "#promobanner sizes", "#promolanding copy",
         ];
 
         var themes = ThemeVocabulary.Discover(notes);
 
-        Assert.Contains("plexo", themes);
-        Assert.Contains("play", themes);
-        Assert.DoesNotContain("pl", themes);
+        Assert.Contains("project", themes);
+        Assert.Contains("promo", themes);
+        Assert.DoesNotContain("pr", themes);
     }
 
     /// <summary>
-    /// Symétrique du précédent : sans plafond sur la longueur, deux notes
-    /// ouvrant pareil donneraient une phrase entière pour thème.
+    /// Mirror of the previous test: without a cap on length, two notes opening
+    /// the same way would turn a whole sentence into a theme.
     /// </summary>
     [Fact]
     public void Discover_DoesNotTurnASharedSentenceIntoATheme()
     {
         string[] notes =
         [
-            "#themeSalut ! petit message pour la facture",
-            "#themeSalut ! je me permets une relance",
-            "#themeconfiguration du canal",
-            "#themeévénement reçu",
-            "#themetoken du live",
+            "#alphaHi! short message about the invoice",
+            "#alphaHi! just a quick follow-up",
+            "#alphachannel configuration",
+            "#alphaevent received",
+            "#alphalive token",
         ];
 
         var themes = ThemeVocabulary.Discover(notes);
 
-        Assert.Contains("theme", themes);
-        Assert.DoesNotContain(themes, t => t.StartsWith("themesalut", StringComparison.Ordinal));
+        Assert.Contains("alpha", themes);
+        Assert.DoesNotContain(themes, t => t.StartsWith("alphahi", StringComparison.Ordinal));
     }
 
     [Fact]
     public void Discover_IgnoresThemesUsedOnlyOnce()
     {
-        string[] notes = ["#plexoun", "#plexodeux", "#singleton unique"];
+        string[] notes = ["#projectone", "#projecttwo", "#singleton unique"];
 
         var themes = ThemeVocabulary.Discover(notes);
 
-        Assert.Contains("plexo", themes);
+        Assert.Contains("project", themes);
         Assert.DoesNotContain(themes, t => t.StartsWith("singleton", StringComparison.Ordinal));
     }
 
     [Fact]
     public void Match_IsCaseInsensitive()
     {
-        string[] vocabulary = ["plexo"];
+        string[] vocabulary = ["project"];
 
-        Assert.Equal("plexo", ThemeVocabulary.Match("#Plexo test\r\ncontenu", vocabulary));
-        Assert.Equal("plexo", ThemeVocabulary.Match("#PLEXO autre\r\ncontenu", vocabulary));
-        Assert.Equal("plexo", ThemeVocabulary.Match("#plexocollé\r\ncontenu", vocabulary));
+        Assert.Equal("project", ThemeVocabulary.Match("#Project test\r\nbody", vocabulary));
+        Assert.Equal("project", ThemeVocabulary.Match("#PROJECT other\r\nbody", vocabulary));
+        Assert.Equal("project", ThemeVocabulary.Match("#projectglued\r\nbody", vocabulary));
     }
 
     [Fact]
     public void Match_PrefersTheLongestApplicableTheme()
     {
-        string[] vocabulary = ["play", "playpokemon"];
+        string[] vocabulary = ["game", "gameboard"];
 
-        Assert.Equal("playpokemon", ThemeVocabulary.Match("#playpokemon deck\r\nx", vocabulary));
-        Assert.Equal("play", ThemeVocabulary.Match("#playconfig manette\r\nx", vocabulary));
+        Assert.Equal("gameboard", ThemeVocabulary.Match("#gameboard layout\r\nx", vocabulary));
+        Assert.Equal("game", ThemeVocabulary.Match("#gamecontroller setup\r\nx", vocabulary));
     }
 
     [Fact]
     public void Match_ReturnsNullWithoutMarker()
-        => Assert.Null(ThemeVocabulary.Match("juste du texte\r\nsuite", ["plexo"]));
+        => Assert.Null(ThemeVocabulary.Match("just text\r\nmore", ["project"]));
 
     [Fact]
     public void Discover_ToleratesNotesWithoutMarker()
     {
-        string[] notes = ["#plexoun", "#plexodeux", "note sans marqueur", ""];
+        string[] notes = ["#projectone", "#projecttwo", "note without marker", ""];
 
         var themes = ThemeVocabulary.Discover(notes);
 
-        Assert.Contains("plexo", themes);
+        Assert.Contains("project", themes);
     }
 }

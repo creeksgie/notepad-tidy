@@ -20,11 +20,11 @@ marche chez quelqu'un d'autre, dans une autre langue ?**
 Une note dont la première ligne commence par `#` déclare son thème.
 
 ```
-# gamma beta
+# project beta
 le lien pour les testeurs, à renvoyer à Camille
 ```
 
-→ thème `gamma-beta`, créé à la volée s'il n'existe pas.
+→ thème `project-beta`, créé à la volée s'il n'existe pas.
 
 C'est le seul mécanisme à la fois sans administration et **totalement
 indépendant de la langue** : la catégorie n'est pas devinée, elle est
@@ -85,8 +85,8 @@ de politesse et les noms propres par capitalisation. **Ces signaux sont des
 compléments, jamais le socle.** Ils sont documentés comme tels dans le code.
 
 Seuls les URL et les domaines y sont réellement universels — et ils sont
-étonnamment informatifs : `contoso.tv`, `plexo.fabrikam.com`,
-`contoso.co` identifient un projet sans ambiguïté.
+étonnamment informatifs : le domaine d'une plateforme, d'un hébergeur ou
+d'un fournisseur identifie un projet sans ambiguïté.
 
 ## Ce que ça donne sur le corpus réel
 

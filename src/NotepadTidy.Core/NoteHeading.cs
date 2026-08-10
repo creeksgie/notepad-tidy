@@ -74,15 +74,16 @@ public static class NoteHeading
 
     private static string? FirstNonEmptyLine(string note)
     {
-        foreach (var line in note.Split('\n'))
+        // '\r' isolé compris : Notepad n'écrit pas toujours des paires CRLF.
+        foreach (var line in note.Split('\r', '\n'))
             if (line.Trim().Length > 0) return line;
         return null;
     }
 
     /// <summary>
-    /// Forme canonique d'un titre, pour que « Gamma — beta » et
-    /// « gamma beta » désignent le même thème. On garde les lettres et les
-    /// chiffres de n'importe quel alphabet.
+    /// Canonical form of a heading, so that "Project — Beta" and
+    /// "project beta" denote the same theme. Letters and digits of any script
+    /// are preserved.
     /// </summary>
     public static string Normalize(string heading)
         => string.Join('-', CorpusProfile.Tokenize(heading));

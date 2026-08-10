@@ -1,19 +1,18 @@
 namespace NotepadTidy.Core;
 
 /// <summary>
-/// Découvre le vocabulaire des thèmes par <b>préfixes partagés</b>.
+/// Discovers the vocabulary of themes from <b>shared prefixes</b>.
 ///
-/// <para>Motivation, tirée d'un corpus réel : en ajoutant « #thème » au début
-/// de la première ligne, on colle très souvent le thème au contenu existant —
-/// « #themeSalut ! », « #projectpour les colonnes ». Aucun séparateur ne
-/// permet de savoir où finit le thème.</para>
+/// <para>Motivation, observed on a real corpus: when a user prepends
+/// "#theme" to the first line, the theme usually ends up glued to the
+/// existing content — "#themeHi there!", "#projectabout the columns". No
+/// separator tells us where the theme ends.</para>
 ///
-/// <para>Mais un thème sert plusieurs fois. Treize notes commençant par
-/// « #project… » partagent ce préfixe, et lui seul. On n'a donc pas besoin
-/// de deviner : il suffit de mesurer.</para>
+/// <para>But a theme is used more than once. Thirteen notes starting with
+/// "#project…" all share that prefix, and only that. So there is nothing to
+/// guess: it is enough to count.</para>
 ///
-/// <para>Aucun dictionnaire, aucune langue, aucun modèle — uniquement des
-/// préfixes et des comptes.</para>
+/// <para>No dictionary, no language, no model — only prefixes and counts.</para>
 /// </summary>
 public static class ThemeVocabulary
 {
@@ -22,21 +21,24 @@ public static class ThemeVocabulary
     public const int MinNotesPerTheme = 2;
 
     /// <summary>
-    /// Longueur au-delà de laquelle un préfixe ne gagne plus de points.
+    /// Length beyond which a prefix earns no further score.
     ///
-    /// Sans ce plafond, un préfixe long couvrant peu de notes l'emporte sur le
-    /// vrai thème : « theme// ===== configuration » (2 notes × 27) battait
-    /// « theme » (8 notes × 5) et fragmentait le thème en trois.
+    /// Without this cap, a long prefix covering few notes beats the real
+    /// theme: "theme// ===== configuration" (2 notes × 27) would outrank
+    /// "theme" (8 notes × 5) and split one theme into three.
     /// </summary>
     public const int LengthCredit = 8;
 
     /// <summary>
-    /// Texte de la première ligne situé après le marqueur, ou <c>null</c> si la
-    /// note ne commence pas par un marqueur.
+    /// First-line text following the marker, or <c>null</c> when the note does
+    /// not start with one.
     /// </summary>
     public static string? RawHeadingLine(string note)
     {
-        foreach (var line in note.Split('\n'))
+        // Splitting on '\n' alone is not enough: Notepad also writes lone '\r'
+        // characters. Without this, the whole note is treated as a single line
+        // and the extracted "theme" swallows the entire content.
+        foreach (var line in note.Split('\r', '\n'))
         {
             var trimmed = line.Trim();
             if (trimmed.Length == 0) continue;
@@ -48,11 +50,10 @@ public static class ThemeVocabulary
     }
 
     /// <summary>
-    /// Thèmes déduits d'un corpus, du plus utilisé au moins utilisé.
+    /// Themes inferred from a corpus, most used first.
     ///
-    /// Glouton : on retient à chaque tour le préfixe qui explique le plus de
-    /// notes — à égalité, le plus long — puis on retire les notes couvertes et
-    /// on recommence.
+    /// Greedy: each round keeps the prefix explaining the most notes — longest
+    /// wins ties — then drops the covered notes and starts over.
     /// </summary>
     public static IReadOnlyList<string> Discover(IEnumerable<string> notes)
     {
@@ -77,16 +78,16 @@ public static class ThemeVocabulary
                 }
             }
 
-            // Score = nombre de notes × longueur du préfixe.
+            // Score = note count × prefix length, with length capped.
             //
-            // Trier d'abord par nombre ne marche pas : un préfixe court est
-            // toujours au moins aussi fréquent que ses extensions, donc « pl »
-            // l'emporterait sur « plexo » et fusionnerait plexo avec play.
-            // Trier d'abord par longueur ne marche pas non plus : deux notes
-            // ouvrant sur « themesalut ! » donneraient ce texte pour thème.
+            // Sorting by count alone fails: a short prefix is always at least
+            // as frequent as its extensions, so "pr" would outrank "project"
+            // and merge two unrelated themes sharing those letters.
             //
-            // Le produit arbitre : « project » (13×10) bat « fl » (18×2),
-            // et « theme » (8×5) bat « themesalut » (2×10).
+            // Sorting by length alone fails too: two notes opening with the
+            // same sentence would turn that sentence into a theme.
+            //
+            // The capped product arbitrates between the two failure modes.
             var best = counts
                 .Where(kv => kv.Value >= MinNotesPerTheme)
                 .OrderByDescending(kv => kv.Value * Math.Min(kv.Key.Length, LengthCredit))
@@ -105,8 +106,8 @@ public static class ThemeVocabulary
     }
 
     /// <summary>
-    /// Thème d'une note, parmi un vocabulaire connu. On retient le plus long
-    /// préfixe qui correspond, pour que « plexopro » l'emporte sur « plexo ».
+    /// Theme of a note, taken from a known vocabulary. The longest matching
+    /// prefix wins, so "projectx" beats "project".
     /// </summary>
     public static string? Match(string note, IEnumerable<string> vocabulary)
     {

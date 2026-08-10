@@ -3,8 +3,8 @@ using NotepadTidy.Core;
 namespace NotepadTidy.Core.Tests;
 
 /// <summary>
-/// Ces signaux sont la base du classement gratuit : ils identifient le type
-/// d'une note et son sujet sans modèle, sans réseau et sans coût.
+/// Optional, language-specific signals. They complement the corpus statistics
+/// but never replace them — see the remarks on <see cref="NoteSignals"/>.
 /// </summary>
 public class NoteSignalsTests
 {
@@ -13,13 +13,13 @@ public class NoteSignalsTests
     [InlineData("Bonjour,\r\nJe suis tombé sur votre site", true)]
     [InlineData("coucou, petite question", true)]
     [InlineData("docker compose up -d", false)]
-    [InlineData("il faut que je pense à salut au fait", false)] // pas en tête
+    [InlineData("il faut que je pense à salut au fait", false)] // not at the start
     public void LooksLikeMessageDraft_DetectsOpeningGreeting(string text, bool expected)
         => Assert.Equal(expected, NoteSignals.LooksLikeMessageDraft(text));
 
     [Theory]
     [InlineData("… merci d'avance, cordialement", true)]
-    [InlineData("contact@project.fr", true)]
+    [InlineData("contact@example.com", true)]
     [InlineData("bonne journée à toi", true)]
     [InlineData("select * from users", false)]
     public void HasEpistolaryMarker_DetectsCorrespondence(string text, bool expected)
@@ -37,9 +37,9 @@ public class NoteSignalsTests
     public void Domains_ExtractsHostsWithoutScheme()
     {
         var domains = NoteSignals.Domains(
-            "voir https://api.contoso.tv/delta et http://www.example.com/page").ToList();
+            "see https://api.example.org/v1 and http://www.example.com/page").ToList();
 
-        Assert.Equal(["api.contoso.tv", "example.com"], domains);
+        Assert.Equal(["api.example.org", "example.com"], domains);
     }
 
     [Fact]
@@ -48,29 +48,29 @@ public class NoteSignalsTests
         Assert.True(NoteSignals.IsMostlyLinks(
             "https://a.example.com https://b.example.com https://c.example.com ok"));
         Assert.False(NoteSignals.IsMostlyLinks(
-            "Un long paragraphe qui explique beaucoup de choses en détail, avec " +
-            "des phrases entières et un seul lien https://a.example.com au milieu " +
-            "de tout ce texte qui domine largement le contenu de la note."));
+            "A long paragraph explaining many things in detail, with whole " +
+            "sentences and a single link https://a.example.com buried in the " +
+            "middle of text that clearly dominates the note."));
     }
 
     /// <summary>
-    /// Le filtre décisif : en français un nom commun n'est pas capitalisé en
-    /// milieu de phrase. Ce qui l'est désigne un projet, un produit ou une
-    /// personne — le seul signal de sujet fiable du corpus.
+    /// The decisive filter for Latin-script French: a common noun is not
+    /// capitalised mid-sentence, so what is must be a project, product or
+    /// person. Deliberately not used as the backbone of classification.
     /// </summary>
     [Fact]
     public void ProperNouns_KeepsMidSentenceCapitalsOnly()
     {
-        const string text = "Je regarde le compte Contoso de Project avec Alex. " +
+        const string text = "Je regarde le compte Twitter de Contoso avec Alex. " +
                             "Ensuite je passe sur Fabrikam.";
 
         var found = NoteSignals.ProperNouns(text).ToList();
 
+        Assert.Contains("Twitter", found);
         Assert.Contains("Contoso", found);
-        Assert.Contains("Project", found);
         Assert.Contains("Alex", found);
         Assert.Contains("Fabrikam", found);
-        // "Je" et "Ensuite" ouvrent une phrase : ce ne sont pas des noms propres.
+        // "Je" and "Ensuite" open a sentence: not proper nouns.
         Assert.DoesNotContain("Je", found);
         Assert.DoesNotContain("Ensuite", found);
     }
@@ -79,14 +79,13 @@ public class NoteSignalsTests
     public void ProperNouns_IgnoresGreetingsAndCalendarWords()
     {
         const string text = "Bref, Bonjour et Merci ne sont pas des projets, " +
-                            "contrairement à Gamma. Rendez-vous Lundi.";
+                            "contrairement à Contoso. Rendez-vous Lundi.";
 
         var found = NoteSignals.ProperNouns(text).ToList();
 
-        Assert.Contains("Gamma", found);
+        Assert.Contains("Contoso", found);
         Assert.DoesNotContain("Bonjour", found);
         Assert.DoesNotContain("Merci", found);
         Assert.DoesNotContain("Lundi", found);
     }
-
 }
