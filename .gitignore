@@ -1,0 +1,34 @@
+# === Données personnelles — ne JAMAIS commiter ===
+# Les onglets Notepad contiennent des secrets, des brouillons de mails et
+# des liens privés. Ils n'ont aucune raison d'être dans un dépôt.
+*.bin
+*.bin.bak
+TabState/
+WindowState/
+LocalState/
+backup*/
+sauvegarde*/
+
+# Modèles d'embedding (lourds, à télécharger séparément)
+*.onnx
+models/
+
+# === .NET ===
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+project.lock.json
+
+# === Éditeurs ===
+.vs/
+.idea/
+.vscode/
+*.swp
+
+# === OS ===
+Thumbs.db
+desktop.ini
