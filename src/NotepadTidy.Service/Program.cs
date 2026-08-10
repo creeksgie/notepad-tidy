@@ -3,7 +3,9 @@ using NotepadTidy.Core;
 using NotepadTidy.Core.IO;
 using NotepadTidy.Service;
 
-Console.OutputEncoding = Encoding.UTF8;
+// No console is attached when running as a background task, and setting the
+// encoding then throws. The file log is the real output channel.
+try { Console.OutputEncoding = Encoding.UTF8; } catch (IOException) { }
 
 // --path lets the service run against an isolated copy, which is how it gets
 // exercised without touching the real notes.
@@ -58,6 +60,8 @@ if (args.Contains("--once"))
 }
 
 using var cancellation = new CancellationTokenSource();
+// Only meaningful when launched from a terminal; harmless otherwise. The
+// scheduled task is stopped with Stop-ScheduledTask.
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
 
 Log($"service started, pid {Environment.ProcessId}");
