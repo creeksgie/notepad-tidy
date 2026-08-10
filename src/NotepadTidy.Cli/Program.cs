@@ -31,6 +31,7 @@ switch (command)
 {
     case "stats": return Stats(store, guard);
     case "analyze": return Analyze(store);
+    case "themes": return Themes(store);
     case "list": return List(store);
     case "dump": return Dump(store, args);
     case "backup": return Backup(store, args);
@@ -200,6 +201,53 @@ static int Analyze(TabStore store)
     return 0;
 
     static string Pct(int n, int total) => $"({100.0 * n / total,5:N1} %)";
+}
+
+/// <summary>
+/// Regroupement par titre explicite. Le regroupement est insensible à la
+/// casse : « #Plexo » et « #plexo » désignent le même thème.
+/// </summary>
+static int Themes(TabStore store)
+{
+    var records = store.ReadAll().Where(r => r.IsSafeToRewrite).ToList();
+
+    // Le thème est souvent collé au contenu (« #themeSalut ! ») : on ne peut pas
+    // le délimiter note par note. On le déduit des préfixes partagés.
+    var vocabulary = ThemeVocabulary.Discover(records.Select(r => r.Text));
+
+    var groups = new Dictionary<string, List<Guid>>(StringComparer.OrdinalIgnoreCase);
+    var untitled = new List<Guid>();
+
+    foreach (var record in records)
+    {
+        var theme = ThemeVocabulary.Match(record.Text, vocabulary);
+        if (theme is null) { untitled.Add(record.Id); continue; }
+        if (!groups.TryGetValue(theme, out var list)) groups[theme] = list = [];
+        list.Add(record.Id);
+    }
+
+    int titled = records.Count - untitled.Count;
+    Console.WriteLine($"Notes exploitables : {records.Count}");
+    Console.WriteLine($"  avec titre « # »  : {titled}");
+    Console.WriteLine($"  sans titre        : {untitled.Count}");
+    Console.WriteLine();
+    Console.WriteLine($"— {groups.Count} thèmes —");
+    foreach (var (theme, ids) in groups.OrderByDescending(g => g.Value.Count).ThenBy(g => g.Key))
+        Console.WriteLine($"  {theme,-28} {ids.Count,3} note{(ids.Count > 1 ? "s" : "")}");
+
+    if (untitled.Count > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine("— Notes sans titre exploitable (aperçu de la 1re ligne) —");
+        foreach (var id in untitled.Take(20))
+        {
+            var text = records.First(r => r.Id == id).Text;
+            var first = text.Split('\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim() ?? "";
+            if (first.Length > 52) first = first[..52] + "…";
+            Console.WriteLine($"  {id.ToString()[..8]}  {first}");
+        }
+    }
+    return 0;
 }
 
 static int List(TabStore store)
