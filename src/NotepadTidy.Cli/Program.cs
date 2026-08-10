@@ -36,6 +36,7 @@ switch (command)
     case "list": return List(store);
     case "dump": return Dump(store, args);
     case "backup": return Backup(store, args);
+    case "restore": return Restore(store, guard, args);
     case "merge": return Merge(store, guard, args);
     default:
         Console.WriteLine("""
@@ -314,6 +315,62 @@ static int Tidy(TabStore store, INotepadGuard guard, string[] args)
     if (outcome.BackupPath is not null) Console.WriteLine($"Backup → {outcome.BackupPath}");
     Console.WriteLine(outcome.Message);
     return outcome.Refused > 0 ? 4 : 0;
+}
+
+/// <summary>
+/// Puts a backup back in place. This is the command that makes every other one
+/// safe, so it is deliberately blunt: Notepad must be closed, the backup must
+/// parse, and the current state is itself backed up first.
+/// </summary>
+static int Restore(TabStore store, INotepadGuard guard, string[] args)
+{
+    if (args.Length < 2) { Console.Error.WriteLine("usage: nptidy restore <backup folder>"); return 1; }
+
+    var source = args[1];
+    var sourceTabs = Path.Combine(source, "TabState");
+    if (!Directory.Exists(sourceTabs))
+    {
+        Console.Error.WriteLine($"no TabState folder in {source}");
+        return 2;
+    }
+
+    if (guard.IsRunning)
+    {
+        Console.Error.WriteLine("Notepad is running. Close it first — it would overwrite the restore.");
+        return 3;
+    }
+
+    // Read the backup through the parser before trusting it. Restoring a
+    // corrupted backup over live notes would turn a bad day into a disaster.
+    var backupStore = new TabStore(new TabPaths(source), store.FileSystem);
+    var usable = backupStore.ReadAll().Count(r => r.IsSafeToRewrite);
+    if (usable == 0)
+    {
+        Console.Error.WriteLine("that backup contains no readable note — refusing to restore");
+        return 4;
+    }
+    Console.WriteLine($"Backup checked: {usable} readable notes.");
+
+    // The current state goes into a backup of its own. A restore is itself an
+    // operation one may want to undo.
+    var safety = Path.Combine(TidyRunner.DefaultBackupRoot,
+        "before-restore_" + DateTime.Now.ToString("yyyy-MM-dd_HHmmss"));
+    Console.WriteLine($"Current state saved to {safety} ({store.Backup(safety)} files).");
+
+    foreach (var existing in store.FileSystem.EnumerateFiles(store.Paths.TabStateDir, "*"))
+        store.FileSystem.DeleteFile(existing);
+
+    int restored = 0;
+    foreach (var file in store.FileSystem.EnumerateFiles(sourceTabs, "*"))
+    {
+        var target = Path.Combine(store.Paths.TabStateDir, Path.GetFileName(file));
+        store.FileSystem.WriteAllBytes(target, store.FileSystem.ReadAllBytes(file));
+        store.FileSystem.SetCreationTime(target, store.FileSystem.GetCreationTime(file));
+        restored++;
+    }
+
+    Console.WriteLine($"Restored {restored} files. Reopen Notepad to check.");
+    return 0;
 }
 
 static int List(TabStore store)
