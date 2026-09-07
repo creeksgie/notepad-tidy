@@ -27,6 +27,22 @@ if (!paths.IsRealNotepadState)
 
 var command = args.Length > 0 && !args[0].StartsWith("--") ? args[0].ToLowerInvariant() : "stats";
 
+// The service logs its failures and stays alive; the CLI has no such net. A
+// stack trace is not a diagnosis for someone whose notes are at stake, so
+// unexpected errors are reported as one line and a distinct exit code.
+try
+{
+    return Dispatch();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"nptidy: {ex.GetType().Name}: {ex.Message}");
+    Console.Error.WriteLine("Nothing was written. Report this with the command you ran.");
+    return 5;
+}
+
+int Dispatch()
+{
 switch (command)
 {
     case "stats": return Stats(store, guard);
@@ -62,6 +78,7 @@ switch (command)
               nptidy list --path C:\sandbox
             """);
         return 1;
+}
 }
 
 static string? ReadOption(string[] args, string name)

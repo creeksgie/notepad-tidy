@@ -176,6 +176,59 @@ public class TabRecordTests
         Assert.Equal(TabStatus.TooShort, record.Status);
     }
 
+    /// <summary>
+    /// Truncation past the 12-byte header. The fixed guard does not catch these:
+    /// the varints and the config block are sized by the file itself, so the
+    /// parser has to check every read. Each of these threw
+    /// IndexOutOfRangeException before the bounds were added.
+    /// </summary>
+    [Theory]
+    // Caret varint with the continuation bit always set: it never terminates
+    // and runs off the end of a 12-byte file.
+    [InlineData(new byte[] { 0x4E, 0x50, 0x00, 0x00, 0x01,
+                             0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80 })]
+    // Ends inside the config block, on the counter byte.
+    [InlineData(new byte[] { 0x4E, 0x50, 0x00, 0x00, 0x01,
+                             0x00, 0x00, 0x01, 0x00, 0x00, 0x03, 0x01 })]
+    public void Parse_TruncatedPastHeader_RefusesWithoutThrowing(byte[] file)
+    {
+        var record = TabRecord.Parse(Guid.NewGuid(), file);
+
+        Assert.False(record.IsSafeToRewrite);
+    }
+
+    /// <summary>
+    /// Every truncation of a known-good tab must be refused. One byte short is
+    /// still a corrupted file, and a corrupted file must never be rewritten.
+    /// </summary>
+    [Fact]
+    public void Parse_EveryPrefixOfARealTab_IsRefused()
+    {
+        for (int length = 0; length < RealTab40.Length; length++)
+        {
+            var record = TabRecord.Parse(Guid.NewGuid(), RealTab40.AsSpan(0, length).ToArray());
+
+            Assert.False(record.IsSafeToRewrite);
+        }
+    }
+
+    /// <summary>
+    /// A declared length big enough to overflow `declared * 2` must be refused
+    /// on its own, not compared against a wrapped number.
+    /// </summary>
+    [Fact]
+    public void Parse_AbsurdDeclaredLength_IsRefused()
+    {
+        var file = new List<byte> { 0x4E, 0x50, 0x00, 0x00, 0x01,
+                                    0x00, 0x00, 0x01, 0x00, 0x00, 0x00 };
+        file.AddRange([0x80, 0x80, 0x80, 0x80, 0x04]); // varint = 2^30
+        file.AddRange(new byte[5]);
+
+        var record = TabRecord.Parse(Guid.NewGuid(), file.ToArray());
+
+        Assert.Equal(TabStatus.LayoutMismatch, record.Status);
+    }
+
     [Fact]
     public void IsSafeToRewrite_IsTrueOnlyForOk()
     {

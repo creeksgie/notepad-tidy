@@ -78,19 +78,42 @@ public sealed class TabRecord
         if (file[4] != KnownVariantMarker)
             return new TabRecord { Id = id, Status = TabStatus.UnknownVariant, FileLength = file.Length };
 
+        // Every read past this point is bounds-checked. The 12-byte guard above
+        // only covers the fixed header: the varints and the config block have
+        // sizes that come from the file itself, so a truncated or drifted file
+        // would otherwise read past the end.
         int i = 5;
-        int cursorStart = ReadVarint(file, ref i);
-        int cursorEnd = ReadVarint(file, ref i);
+        if (!TryReadVarint(file, ref i, out int cursorStart, out var failure))
+            return new TabRecord { Id = id, Status = failure, FileLength = file.Length };
+        if (!TryReadVarint(file, ref i, out int cursorEnd, out failure))
+            return new TabRecord { Id = id, Status = failure, FileLength = file.Length };
 
         // Config block: "01 00 00", then a COUNTER, then that many bytes.
         // It is not a fixed-size block — assuming so shifts everything by one
         // byte on counter-02 variants, which are 17% of the corpus.
+        if (i + 4 > file.Length)
+            return new TabRecord { Id = id, Status = TabStatus.TooShort, FileLength = file.Length };
         i += 3;
         int extraCount = file[i++];
+        if (i + extraCount > file.Length)
+            return new TabRecord { Id = id, Status = TabStatus.TooShort, FileLength = file.Length };
         i += extraCount;
 
-        int declared = ReadVarint(file, ref i);
+        if (!TryReadVarint(file, ref i, out int declared, out failure))
+            return new TabRecord { Id = id, Status = failure, FileLength = file.Length };
         int textOffset = i;
+
+        // Bound the declared length before multiplying. A value large enough to
+        // overflow `declared * 2` would be compared against a wrapped number,
+        // which is not a comparison at all.
+        if (declared < 0 || declared > (file.Length - textOffset) / 2)
+        {
+            return new TabRecord
+            {
+                Id = id, Status = TabStatus.LayoutMismatch,
+                DeclaredLength = declared, TextOffset = textOffset, FileLength = file.Length,
+            };
+        }
 
         // The layout must add up to the byte: header + text + marker + CRC.
         int expected = textOffset + declared * 2 + 5;
@@ -162,18 +185,43 @@ public sealed class TabRecord
         return result;
     }
 
-    // Unsigned LEB128. Note that the size varies with the value, so the header
-    // has no fixed length and the text offset can land on an odd byte.
-    private static int ReadVarint(ReadOnlySpan<byte> b, ref int i)
+    /// <summary>
+    /// Longest LEB128 encoding that still fits a 32-bit value. Anything longer
+    /// is not a length we know how to read.
+    /// </summary>
+    private const int MaxVarintBytes = 5;
+
+    /// <summary>
+    /// Unsigned LEB128, bounds-checked. Note that the size varies with the
+    /// value, so the header has no fixed length and the text offset can land on
+    /// an odd byte.
+    ///
+    /// <para>Returns false rather than throwing, and says which refusal applies:
+    /// a file that ends mid-varint is <see cref="TabStatus.TooShort"/>, while an
+    /// encoding that never terminates is format drift
+    /// (<see cref="TabStatus.UnknownVariant"/>) — the same clean refusal the
+    /// version sentinel gives, instead of an exception that would strand the
+    /// whole pass.</para>
+    /// </summary>
+    private static bool TryReadVarint(
+        ReadOnlySpan<byte> b, ref int i, out int value, out TabStatus failure)
     {
-        int value = 0, shift = 0;
-        while (true)
+        value = 0;
+        failure = TabStatus.Ok;
+        int shift = 0;
+
+        for (int read = 0; read < MaxVarintBytes; read++)
         {
+            if (i >= b.Length) { failure = TabStatus.TooShort; return false; }
+
             byte c = b[i++];
             value |= (c & 0x7F) << shift;
-            if ((c & 0x80) == 0) return value;
+            if ((c & 0x80) == 0) return true;
             shift += 7;
         }
+
+        failure = TabStatus.UnknownVariant;
+        return false;
     }
 
     private static void WriteVarint(List<byte> output, int value)
