@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Le workflow ne fait que compiler et tester : il n'a besoin que de lire.
+# Sur un dépôt public, le jeton d'une PR venue d'un fork ne doit rien pouvoir
+# écrire.
+permissions:
+  contents: read
+
 jobs:
   build:
     # Le projet cible Windows, mais Core n'a aucune dépendance système :

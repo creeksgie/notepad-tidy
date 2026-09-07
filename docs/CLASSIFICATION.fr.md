@@ -21,7 +21,7 @@ Une note dont la première ligne commence par `#` déclare son thème.
 
 ```
 # project beta
-le lien pour les testeurs, à renvoyer à Camille
+le lien pour les testeurs
 ```
 
 → thème `project-beta`, créé à la volée s'il n'existe pas.

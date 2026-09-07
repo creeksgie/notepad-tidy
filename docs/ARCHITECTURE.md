@@ -153,7 +153,7 @@ NotepadTidy.Core/
     CorpusProfile      corpus statistics — diagnostics
     NoteSignals        optional, language-specific signals — diagnostics
     IO/                ITabFileSystem, INotepadGuard + Windows implementations
-NotepadTidy.Service/    event-driven watcher, orchestration          (to do)
+NotepadTidy.Service/    event-driven watcher, orchestration
 NotepadTidy.Cli/        stats, analyze, themes, list, dump, backup, merge
 ```
 

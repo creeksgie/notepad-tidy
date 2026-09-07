@@ -119,12 +119,10 @@ Fichier d'état, à côté de la config :
     "28e8c91b-7b1e-4155-a174-f6b1b743dc06": {
       "theme": "project-alpha",
       "contentHash": "sha256:…",
-      "lastMerged": "2026-08-10T18:56:56Z",
-      "centroid": [0.021, -0.114, …]
+      "lastMerged": "2026-08-10T18:56:56Z"
     }
   },
-  "absorbed": ["b9bd4408-d11d-4eab-a4e2-edad2380814e"],
-  "modelVersion": "multilingual-e5-small@1"
+  "absorbed": ["b9bd4408-d11d-4eab-a4e2-edad2380814e"]
 }
 ```
 
@@ -134,8 +132,6 @@ Règles :
 - Un conteneur dont le `contentHash` ne correspond plus a été **édité à la
   main** : on append quand même, on ne régénère jamais depuis zéro. Tes
   éditions manuelles sont sacrées.
-- Changer de modèle d'embedding invalide tous les centroïdes → reclustering
-  complet forcé.
 
 ## Sécurité des données
 
@@ -159,15 +155,18 @@ NotepadTidy.Core/
     TabPaths           résolution de chemins — pur, aucune I/O
     TabStore           lecture et énumération du TabState
     TabMerger          la fusion : le seul code qui détruit des données
+    NoteHeading        le titre explicite « # »
+    ThemeVocabulary    découverte des thèmes par préfixe partagé
+    ThemeMention       rangement de repli, par mention dans le corps
+    CorpusProfile      statistiques du corpus — diagnostic
+    NoteSignals        signaux optionnels, liés à une langue — diagnostic
     IO/                ITabFileSystem, INotepadGuard + implémentations Windows
-NotepadTidy.Classify/   embeddings ONNX, clustering, nommage        (à faire)
-NotepadTidy.Service/    watcher événementiel, orchestration          (à faire)
-NotepadTidy.Cli/        stats, list, dump, backup, merge
+NotepadTidy.Service/    watcher événementiel, orchestration
+NotepadTidy.Cli/        stats, analyze, themes, list, dump, backup, merge
 ```
 
-`Core` n'a aucune dépendance externe. Les trois quarts de son code
-(`Crc32`, `TabRecord`, `TabPaths`) sont des fonctions pures, testables sans
-disque ni Windows.
+`Core` n'a aucune dépendance externe. L'essentiel de son code est constitué
+de fonctions pures, testables sans disque ni Windows.
 
 ### Pourquoi les interfaces `IO/`
 
@@ -199,8 +198,3 @@ dotnet publish -c Release -r win-x64 /p:PublishAot=true
 
 NativeAOT : un `.exe` autonome, pas de runtime .NET à installer sur la
 machine cible, démarrage quasi instantané, empreinte mémoire réduite.
-
-Note : ONNX Runtime ne se prête pas toujours bien à NativeAOT. Si ça coince,
-publier `NotepadTidy.Service` en AOT et laisser la partie classification
-dans un processus séparé lancé à la demande — ce qui est de toute façon
-souhaitable, puisque le modèle ne doit pas rester résident.
